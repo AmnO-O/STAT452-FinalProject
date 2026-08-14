@@ -11,3 +11,11 @@ Thông kê quan trọng là phải diễn giải được
 phương sai đồng nhất tức là phương sai epsilon y hội tụ về một cái giá trị nào đó. 
 Giả định nào cũng phải kiểm tra và phải tiến hành cải thiện được hay không là do dữ liệu còn có tiến hành là sẽ có điểm
 không kiểm định thì thiếu mất điểm 
+
+ví dụ thang điểm 10 thì đưa nó về factor dạng trung bình, khá, giỏi 
+
+chia phải có lý do 
+
+mẫu không cân bằng thì phải dùng type 3
+
+interaction của 3 thằng thì khi có ý nghĩa thì không được bỏ 

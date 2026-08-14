@@ -1,43 +1,76 @@
-library(tidyverse)
+---
+title: "activity 1"
+author: "Group 08"
+date: "2026-08-06"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read Data
 
 ## Load the dataset ds_salaries
+
+```{r}
+library(tidyverse)
 data <- read.csv("dataset/ds_salaries.csv")
 head(data)
 summary(data)
-
+```
 
 #1 Data Preprocessing
 
 ## get rid of ID column
+
+```{r}
 data$X <- NULL
 head(data)
-
+```
 
 ## Check for missing values
+
+```{r}
 missing_values <- colSums(is.na(data))
 print(missing_values) ### The dataset has no Na values
-
+```
 
 ## Check for empty strings
+
+```{r}
 empty_strings <- colSums(data == "")
 print(empty_strings) ### The dataset has no empty strings
-
+```
 
 ## Check for duplicate rows
+
+```{r}
 duplicate_rows <- data[duplicated(data), ]
 print(nrow(duplicate_rows)) ### 42 dupplicated rows
-
+```
 
 ## Detect outliers using boxplots for numeric columns
 
 ### Boxplot to visualize extreme high earners
+
+```{r}
 ggplot(data, aes(x = "", y = salary_in_usd)) +
   geom_boxplot(fill = "skyblue", outlier.color = "red", outlier.shape = 16) +
   scale_y_continuous(labels = scales::dollar) +
   theme_minimal() +
   labs(title = "Detecting Outliers in Salary (USD)", x = "", y = "Salary in USD")
+```
 
 ### Calculate IQR parameters
+
+```{r}
 Q1 <- quantile(data$salary_in_usd, 0.25)
 Q3 <- quantile(data$salary_in_usd, 0.75)
 IQR_value <- Q3 - Q1
@@ -50,4 +83,4 @@ outlier_rows <- data %>%
   filter(salary_in_usd < lower_bound | salary_in_usd > upper_bound)
 
 cat("Total IQR Outliers Detected:", nrow(outlier_rows), "\n") # 10 outliers detected
-
+```
