@@ -1,8 +1,8 @@
 ---
-title: "activity 1"
+title: "Activity 1 — Salary Analysis: Data Preprocessing"
 author: "Group 08"
-date: "2026-08-06"
-output: 
+date: "2026-08-16"
+output:
   pdf_document:
     latex_engine: xelatex
     toc: true
@@ -12,12 +12,14 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Read Data
 
-## Load the dataset ds_salaries
+We start by loading the raw dataset `ds_salaries.csv` (607 observations, 11
+variables) and inspecting its structure.
 
 ```{r}
 library(tidyverse)
@@ -26,39 +28,53 @@ head(data)
 summary(data)
 ```
 
-#1 Data Preprocessing
+# 1 Data Preprocessing
 
-## get rid of ID column
+## 1.1 Remove the ID column
+
+The first column `X` is only a row index (0–606). It carries no information,
+so we remove it to avoid confusing the models later.
 
 ```{r}
 data$X <- NULL
 head(data)
 ```
 
-## Check for missing values
+## 1.2 Check for missing values and empty strings
 
 ```{r}
 missing_values <- colSums(is.na(data))
 print(missing_values) ### The dataset has no Na values
 ```
 
-## Check for empty strings
-
 ```{r}
 empty_strings <- colSums(data == "")
 print(empty_strings) ### The dataset has no empty strings
 ```
 
-## Check for duplicate rows
+The dataset contains **no missing values** and **no empty strings**, so no
+imputation or deletion is needed.
+
+## 1.3 Remove duplicate records
 
 ```{r}
 duplicate_rows <- data[duplicated(data), ]
 print(nrow(duplicate_rows)) ### 42 dupplicated rows
 ```
 
-## Detect outliers using boxplots for numeric columns
+```{r}
+data <- data %>% distinct()
+cat("Rows after removing duplicates:", nrow(data), "\n") ### 607 -> 565
+```
 
-### Boxplot to visualize extreme high earners
+42 rows are exact duplicates of other rows. We keep the first occurrence of
+each and remove the rest (**607 → 565**). Duplicates add no information and
+would double-count observations in every later statistic (means, ANOVA group
+sizes, model fitting).
+
+## 1.4 Detect and handle outliers in `salary_in_usd`
+
+### Boxplot of the raw salary
 
 ```{r}
 ggplot(data, aes(x = "", y = salary_in_usd)) +
@@ -68,7 +84,7 @@ ggplot(data, aes(x = "", y = salary_in_usd)) +
   labs(title = "Detecting Outliers in Salary (USD)", x = "", y = "Salary in USD")
 ```
 
-### Calculate IQR parameters
+### IQR rule (global)
 
 ```{r}
 Q1 <- quantile(data$salary_in_usd, 0.25)
@@ -78,9 +94,332 @@ IQR_value <- Q3 - Q1
 lower_bound <- Q1 - 1.5 * IQR_value
 upper_bound <- Q3 + 1.5 * IQR_value
 
-### Filter outlier rows
-outlier_rows <- data %>% 
+outlier_rows <- data %>%
   filter(salary_in_usd < lower_bound | salary_in_usd > upper_bound)
 
 cat("Total IQR Outliers Detected:", nrow(outlier_rows), "\n") # 10 outliers detected
+```
+
+The IQR rule flags **10 observations** above 280,911 USD; none fall below the
+lower bound.
+
+### Decision: keep the outliers and log-transform
+
+```{r}
+data$log_salary <- log(data$salary_in_usd) ### natural logarithm (ln)
+```
+
+We **keep all 10 rows**. They are legitimate executive/director salaries
+(EX/SE level, mostly US employers), not data-entry errors. Removing ~1.6% of an
+already small sample (565) would bias group means and group sizes, and
+winsorization would fabricate values. Instead, the skewness is handled at the
+model level by adding `log_salary = ln(salary_in_usd)`, which later tasks use
+as the response.
+
+### Cross-check: per-group IQR within experience level
+
+A single global IQR ignores the fact that salary naturally varies by
+experience level. To verify that our flags are just high earners within each
+group (not data errors), we repeat the IQR rule **within each experience
+level**:
+
+```{r}
+group_outliers <- data %>%
+  group_by(experience_level) %>%
+  mutate(gQ1 = quantile(salary_in_usd, 0.25),
+         gQ3 = quantile(salary_in_usd, 0.75),
+         gIQR = gQ3 - gQ1,
+         is_group_outlier = salary_in_usd < (gQ1 - 1.5 * gIQR) |
+                            salary_in_usd > (gQ3 + 1.5 * gIQR)) %>%
+  ungroup()
+print(table(group_outliers$experience_level, group_outliers$is_group_outlier))
+```
+
+The flags are spread across all four levels (EN 2, MI 5, SE 3, EX 2), which
+confirms they are simply the top earners of each group — supporting our keep
+decision.
+
+## 1.5 Group granular job titles into major categories
+
+The dataset has 52 distinct job titles, too sparse for modeling. We group them
+into **7 major categories** using priority-ordered keyword matching.
+Management titles contain words like "Data Science" (e.g., "Head of Data
+Science"), so they must be matched **first**; `Research Scientist` must be
+matched before the generic `Scientist` pattern.
+
+```{r}
+data <- data %>%
+  mutate(job_category = case_when(
+    grepl("Director|Head|Manager|Lead", job_title, ignore.case = TRUE) ~ "Management_Lead",
+    grepl("Machine Learning|ML Engineer|ML Scientist|AI|Computer Vision|NLP|Deep Learning|Researcher",
+          job_title, ignore.case = TRUE) ~ "ML_AI_Engineer",
+    grepl("Research Scientist", job_title, ignore.case = TRUE) ~ "Research",
+    grepl("Data Engineer|Big Data|ETL|Cloud Data|Data Architect|Data Specialist|Data Science Engineer",
+          job_title, ignore.case = TRUE) ~ "Data_Engineer",
+    grepl("Data Scientist|Scientist", job_title, ignore.case = TRUE) ~ "Data_Scientist",
+    grepl("Data Analyst", job_title, ignore.case = TRUE) ~ "Data_Analyst",
+    TRUE ~ "Other"
+  ))
+
+stopifnot(sum(is.na(data$job_category)) == 0)
+
+data$job_category <- factor(data$job_category)
+print(table(data$job_category))
+```
+
+Every title maps to exactly one category (the `stopifnot` assertion passes),
+and no title is left unmapped.
+
+## 1.6 Encode categorical variables
+
+### Ordinal encoding
+
+`experience_level` and `company_size` have a natural order, so we encode them
+as ordinal integers. The raw character columns are kept alongside for the
+Factorial ANOVA in Task 3.
+
+```{r}
+data <- data %>%
+  mutate(exp_level_ord = case_when(
+    experience_level == "EN" ~ 1L,
+    experience_level == "MI" ~ 2L,
+    experience_level == "SE" ~ 3L,
+    experience_level == "EX" ~ 4L
+  ))
+
+data <- data %>%
+  mutate(company_size_ord = case_when(
+    company_size == "S" ~ 1L,
+    company_size == "M" ~ 2L,
+    company_size == "L" ~ 3L
+  ))
+```
+
+### One-hot encoding with explicit reference levels
+
+We use one-hot encoding (drop the reference level) for the nominal variables.
+The reference is set **explicitly** — never left to `factor()`'s alphabetical
+order, which would silently pick e.g. `CT` instead of `FT` for
+`employment_type`.
+
+```{r}
+one_hot <- function(df, col, prefix, ref_level) {
+  f <- relevel(factor(df[[col]]), ref = ref_level)
+  mm <- as.data.frame(model.matrix(~ f - 1, data = df)[, -1, drop = FALSE])
+  colnames(mm) <- paste0(prefix, gsub("[^[:alnum:]]", "_", levels(f)[-1]))
+  mm
+}
+```
+
+`company_location` has 53 countries, 36 of which have at most 3 rows. Keeping
+all of them would create ~52 near-empty dummies and unstable estimates, so we
+collapse to the **Top 7 countries + Other** (US alone is ~63% of the sample).
+
+```{r}
+top_countries <- c("US", "GB", "CA", "DE", "IN", "FR", "ES")
+data <- data %>%
+  mutate(location_group = ifelse(company_location %in% top_countries,
+                                 company_location, "Other"),
+         residence_group = ifelse(employee_residence %in% top_countries,
+                                  employee_residence, "Other"))
+
+data <- bind_cols(
+  data,
+  one_hot(data, "job_category", "job_cat_", ref_level = "Data_Analyst"),
+  one_hot(data, "employment_type", "empl_", ref_level = "FT"),
+  one_hot(data, "location_group", "loc_", ref_level = "Other"),
+  one_hot(data, "residence_group", "res_", ref_level = "Other")
+)
+```
+
+`employment_type` is highly imbalanced (FT dominates; PT/CT/FL are rare). We
+keep all four levels and one-hot encode them; the imbalance is acknowledged in
+the report, and the ANOVA will use Type III sums of squares because of it.
+
+For non-remote employees, the company location equals the employee residence,
+so the two dummy sets would be strongly correlated in a regression. We add a
+single binary `is_local` indicator as a low-collinearity alternative.
+
+```{r}
+data$is_local <- as.integer(data$company_location == data$employee_residence)
+```
+
+## 1.7 Scale numerical features
+
+Numerical predictors are standardized (z-score) because penalized models
+(Ridge/LASSO) require scale-invariant features. Raw columns are preserved for
+interpretable models (MLR, ANOVA).
+
+```{r}
+data$salary_in_usd_scaled <- as.numeric(scale(data$salary_in_usd))
+data$log_salary_scaled <- as.numeric(scale(data$log_salary))
+data$remote_ratio_scaled <- as.numeric(scale(data$remote_ratio))
+data$exp_level_ord_scaled <- as.numeric(scale(data$exp_level_ord))
+data$company_size_ord_scaled <- as.numeric(scale(data$company_size_ord))
+```
+
+## 1.8 Final verification
+
+```{r}
+cat("Rows after cleaning:", nrow(data), "\n")                 ### 565
+cat("Missing values after cleaning:", sum(is.na(data)), "\n") ### 0
+cat("Duplicates after cleaning:", sum(duplicated(data)), "\n")### 0
+```
+
+### Contingency tables for downstream planning
+
+These tables are printed for Members B & C: the first checks whether the
+Job Category × Experience Level interaction has sparse cells; the second
+quantifies the overlap between the location and residence dummies.
+
+```{r}
+print(table(data$job_category, data$experience_level))
+```
+
+```{r}
+print(table(data$location_group, data$residence_group))
+cat("is_local = 1 (location == residence):", sum(data$is_local),
+    "of", nrow(data), "rows\n")
+```
+
+## 1.9 Data dictionary
+
+```{r}
+data_dictionary <- data.frame(
+  Variable = c("work_year", "experience_level", "employment_type", "job_title",
+               "salary", "salary_currency", "salary_in_usd", "employee_residence",
+               "remote_ratio", "company_location", "company_size", "log_salary",
+               "job_category", "exp_level_ord", "company_size_ord",
+               "location_group", "residence_group", "is_local", "job_cat_*",
+               "empl_*", "loc_*", "res_*", "*_scaled"),
+  Type = c("numeric", "character", "character", "character", "numeric",
+           "character", "numeric", "character", "numeric", "character",
+           "character", "numeric", "factor", "ordinal (1-4)", "ordinal (1-3)",
+           "factor", "factor", "binary (0/1)", "one-hot (6)", "one-hot (3)",
+           "one-hot (7)", "one-hot (7)", "z-score"),
+  Meaning = c("Year the salary was paid", "Experience level (EN/MI/SE/EX)",
+              "Employment type (PT/FT/CT/FL)", "Original granular job title",
+              "Gross salary in original currency", "ISO 4217 currency code",
+              "Salary converted to USD (response)", "Employee's country of residence",
+              "Remote work ratio (0/50/100)", "Employer's country",
+              "Company size (S/M/L)", "ln(salary_in_usd) for modeling",
+              "Grouped job category (7 levels)", "Ordinal encoding of experience",
+              "Ordinal encoding of company size", "Top-7 countries + Other",
+              "Top-7 countries + Other (residence)",
+              "1 if company_location == employee_residence",
+              "Dummies of job_category (ref: Data_Analyst)",
+              "Dummies of employment_type (ref: FT)", "Dummies of location_group (ref: Other)",
+              "Dummies of residence_group (ref: Other)", "Standardized numeric features")
+)
+print(data_dictionary)
+```
+
+## 1.10 Save the cleaned dataset
+
+The cleaned and encoded dataset is written once and serves as the **single
+source of truth** for Tasks 3–5 (ANOVA, regression, logistic regression).
+
+```{r}
+write.csv(data, "dataset/ds_salaries_clean.csv", row.names = FALSE)
+```
+
+# 2 Diagnostic plots (feeding Task 2 — EDA)
+
+## Distribution of salary (raw vs. log)
+
+```{r}
+ggplot(data, aes(x = salary_in_usd)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 30) +
+  scale_x_continuous(labels = scales::dollar) +
+  theme_minimal() +
+  labs(title = "Distribution of Salary (USD)", x = 
+         "Salary in USD", y = "Count")
+
+ggplot(data, aes(x = log_salary)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of ln(Salary)", x = 
+         "ln(Salary in USD)", y = "Count")
+```
+
+## Salary by job category
+
+```{r}
+ggplot(data, aes(x = job_category, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Job Category", x = "", y = "ln(Salary in USD)")
+```
+
+## Salary by experience level
+
+```{r}
+ggplot(data, aes(x = experience_level, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Experience Level", x = 
+         "Experience Level", y = "ln(Salary in USD)")
+```
+
+## Salary by company size
+
+```{r}
+ggplot(data, aes(x = company_size, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Company Size", x = 
+         "Company Size", y = "ln(Salary in USD)")
+```
+
+## Salary by employment type
+
+```{r}
+ggplot(data, aes(x = employment_type, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Employment Type", x = 
+          "Employment Type", y = "ln(Salary in USD)")
+```
+
+## Salary by remote work ratio (discrete: 0/50/100)
+
+```{r}
+ggplot(data, aes(x = factor(remote_ratio), y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Remote Work Ratio", x = 
+         "Remote Ratio (%)", y = "ln(Salary in USD)")
+```
+
+## Salary by company location group
+
+```{r}
+ggplot(data, aes(x = location_group, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Company Location", x = 
+          "", y = "ln(Salary in USD)")
+```
+
+## Salary trend over time (work-year)
+
+```{r}
+ggplot(data, aes(x = factor(work_year), y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Work Year", x = 
+         "Work Year", y = "ln(Salary in USD)")
+```
+
+## Number of jobs per category
+
+```{r}
+ggplot(data, aes(x = job_category)) +
+  geom_bar(fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Number of Jobs per Category", x = 
+         "", y = "Count")
 ```
