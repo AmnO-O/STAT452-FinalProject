@@ -1,0 +1,30 @@
+---
+title: "Activity 1 — Task 6: Model Evaluation & Comparison"
+author: "Group 08"
+date: "2026-08-20"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 6 Model Evaluation & Comparison
+
+## 6.1 Regression models: RMSE, MAE, R^2
+
+## 6.2 Logistic model: Accuracy, Precision, Recall, F1-Score, ROC-AUC
+
+## 6.3 Best model selection and justification

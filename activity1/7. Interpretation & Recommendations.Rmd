@@ -1,0 +1,28 @@
+---
+title: "Activity 1 — Task 7: Interpretation and Recommendations"
+author: "Group 08"
+date: "2026-08-22"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 7 Interpretation and Recommendations
+
+## 7.1 Feature importance interpretation
+
+## 7.2 Avenues for model improvement

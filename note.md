@@ -19,3 +19,5 @@ chia phải có lý do
 mẫu không cân bằng thì phải dùng type 3
 
 interaction của 3 thằng thì khi có ý nghĩa thì không được bỏ 
+
+tham khảo nghiên cứu khác 

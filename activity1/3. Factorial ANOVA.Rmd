@@ -1,0 +1,34 @@
+---
+title: "Activity 1 — Task 3: Inferential Statistics & Factorial ANOVA"
+author: "Group 08"
+date: "2026-08-18"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 3 Inferential Statistics & Factorial ANOVA
+
+## 3.1 Statistical technique selection
+
+## 3.2 Factorial ANOVA model
+
+## 3.3 Assumption testing (normality of residuals, homogeneity of variance)
+
+## 3.4 Remedies for violated assumptions
+
+## 3.5 Salary trends over time (work-year)

@@ -1,0 +1,30 @@
+---
+title: "Activity 1 — Task 5: Binary Logistic Regression Modeling"
+author: "Group 08"
+date: "2026-08-20"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 5 Binary Logistic Regression Modeling
+
+## 5.1 Create the binary target `is_top_tier` (Q3 = 75th percentile)
+
+## 5.2 Fit the logistic regression model
+
+## 5.3 Interpret coefficients via Odds Ratios (exp(beta))

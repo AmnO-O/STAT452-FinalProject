@@ -1,0 +1,149 @@
+---
+title: "Activity 1 — Task 2: Exploratory Data Analysis"
+author: "Group 08"
+date: "2026-08-16"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This task analyzes the cleaned dataset `ds_salaries_clean.csv` produced in
+Task 1 (565 rows, no missing values, no duplicates). The response variable
+throughout is `salary_in_usd`; `log_salary` is used for plots because the raw
+salary is strongly right-skewed.
+
+```{r}
+library(tidyverse)
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 2 Exploratory Data Analysis
+
+## 2.1 Descriptive statistics
+
+```{r}
+summary(data$salary_in_usd)
+```
+
+```{r}
+data %>%
+  group_by(job_category) %>%
+  summarise(n = n(),
+            mean_salary = mean(salary_in_usd),
+            median_salary = median(salary_in_usd),
+            sd_salary = sd(salary_in_usd),
+            .groups = "drop") %>%
+  arrange(desc(mean_salary))
+```
+
+## 2.2 Distribution of salary (raw vs. log)
+
+```{r}
+ggplot(data, aes(x = salary_in_usd)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 30) +
+  scale_x_continuous(labels = scales::dollar) +
+  theme_minimal() +
+  labs(title = "Distribution of Salary (USD)", x =
+         "Salary in USD", y = "Count")
+
+ggplot(data, aes(x = log_salary)) +
+  geom_histogram(fill = "skyblue", color = "white", bins = 30) +
+  theme_minimal() +
+  labs(title = "Distribution of ln(Salary)", x =
+         "ln(Salary in USD)", y = "Count")
+```
+
+The raw salary is strongly right-skewed (long tail of high earners up to
+600,000 USD), while the log-transformed salary is close to symmetric — which is
+why later modeling tasks use `log_salary`.
+
+## 2.3 Salary by job category
+
+```{r}
+ggplot(data, aes(x = job_category, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Job Category", x = "", y = "ln(Salary in USD)")
+```
+
+## 2.4 Salary by experience level
+
+```{r}
+ggplot(data, aes(x = experience_level, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Experience Level", x =
+         "Experience Level", y = "ln(Salary in USD)")
+```
+
+## 2.5 Salary by company size
+
+```{r}
+ggplot(data, aes(x = company_size, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Company Size", x =
+         "Company Size", y = "ln(Salary in USD)")
+```
+
+## 2.6 Salary by employment type
+
+```{r}
+ggplot(data, aes(x = employment_type, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Employment Type", x =
+          "Employment Type", y = "ln(Salary in USD)")
+```
+
+## 2.7 Salary by remote work ratio (discrete: 0/50/100)
+
+```{r}
+ggplot(data, aes(x = factor(remote_ratio), y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Remote Work Ratio", x =
+         "Remote Ratio (%)", y = "ln(Salary in USD)")
+```
+
+## 2.8 Salary by company location group
+
+```{r}
+ggplot(data, aes(x = location_group, y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Company Location", x =
+          "", y = "ln(Salary in USD)")
+```
+
+## 2.9 Salary trend over time (work-year)
+
+```{r}
+ggplot(data, aes(x = factor(work_year), y = log_salary)) +
+  geom_boxplot(fill = "skyblue", outlier.color = "red") +
+  theme_minimal() +
+  labs(title = "ln(Salary) by Work Year", x =
+         "Work Year", y = "ln(Salary in USD)")
+```
+
+## 2.10 Number of jobs per category
+
+```{r}
+ggplot(data, aes(x = job_category)) +
+  geom_bar(fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(title = "Number of Jobs per Category", x =
+         "", y = "Count")
+```
