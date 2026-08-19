@@ -18,17 +18,86 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This task analyzes the cleaned dataset `ds_salaries_clean.csv` produced in
 Task 1 (565 rows, no missing values, no duplicates). The response variable
-throughout is `salary_in_usd`; `log_salary` is used for plots because the raw
-salary is strongly right-skewed.
+throughout is `salary_in_usd`. Because the raw salary is strongly right-skewed
+(mean 112,298 vs. median 101,570, max 600,000 USD), every comparison below is
+shown **twice, side by side**: raw salary in USD (directly interpretable, but
+the long tail compresses the boxes) and `log_salary = ln(salary)` (symmetric,
+so group differences are visually comparable).
 
 ```{r}
 library(tidyverse)
 data <- read.csv("dataset/ds_salaries_clean.csv")
 ```
 
+Helper that renders the raw-salary and ln-salary boxplots of one factor
+next to each other. Factor levels are relabeled from short codes to full,
+readable names so the plots are self-explanatory (see the abbreviation table
+in §2.1):
+
+```{r}
+label_map <- list(
+  experience_level = c(EN = "Entry-level", MI = "Mid-level",
+                       SE = "Senior-level", EX = "Executive"),
+  employment_type  = c(FT = "Full-time", PT = "Part-time",
+                       CT = "Contract", FL = "Freelance"),
+  company_size     = c(S = "Small", M = "Medium", L = "Large"),
+  location_group   = c(US = "United States", GB = "United Kingdom",
+                       CA = "Canada", DE = "Germany", IN = "India",
+                       FR = "France", ES = "Spain", Other = "Other"),
+  job_category     = c(Data_Analyst = "Data Analyst",
+                       Data_Scientist = "Data Scientist",
+                       Data_Engineer = "Data Engineer",
+                       ML_AI_Engineer = "ML/AI Engineer",
+                       Management_Lead = "Management/Lead",
+                       Research = "Research", Other = "Other")
+)
+
+salary_compare <- function(x_var, x_label, flip = FALSE) {
+  df <- data
+  if (!is.factor(df[[x_var]])) {
+    df[[x_var]] <- factor(df[[x_var]])
+  }
+  if (x_var %in% names(label_map)) {
+    df[[x_var]] <- factor(df[[x_var]],
+                          levels = names(label_map[[x_var]]),
+                          labels = unname(label_map[[x_var]]))
+  }
+  p_raw <- ggplot(df, aes(x = .data[[x_var]], y = salary_in_usd)) +
+    geom_boxplot(fill = "skyblue", outlier.color = "red") +
+    scale_y_continuous(labels = scales::dollar) +
+    theme_minimal() +
+    labs(title = "Raw Salary (USD)", x = x_label, y = "Salary in USD")
+
+  p_log <- ggplot(df, aes(x = .data[[x_var]], y = log_salary)) +
+    geom_boxplot(fill = "skyblue", outlier.color = "red") +
+    theme_minimal() +
+    labs(title = "ln(Salary)", x = x_label, y = "ln(Salary in USD)")
+
+  if (flip) {
+    p_raw <- p_raw + coord_flip()
+    p_log <- p_log + coord_flip()
+  }
+  cowplot::plot_grid(p_raw, p_log, ncol = 2)
+}
+```
+
 # 2 Exploratory Data Analysis
 
-## 2.1 Descriptive statistics
+## 2.1 Abbreviations
+
+The raw data uses short codes for its categorical variables. The following
+table decodes every code that appears in the plots below.
+
+| Abbreviation | Meaning |
+|---|---|
+| FT / PT / CT / FL | Full-time / Part-time / Contract / Freelance employment |
+| EN / MI / SE / EX | Entry-level / Mid-level / Senior-level (Expert) / Executive-level (Director) experience |
+| S / M / L | Small (< 50 employees) / Medium (50–250) / Large (> 250) company size |
+| US / GB / CA / DE / IN / FR / ES | United States / United Kingdom / Canada / Germany / India / France / Spain |
+| 0 / 50 / 100 (remote ratio) | No remote work (< 20%) / Partially remote / Fully remote |
+| Other (location) | Any country outside the top 7 above |
+
+## 2.2 Descriptive statistics
 
 ```{r}
 summary(data$salary_in_usd)
@@ -45,102 +114,77 @@ data %>%
   arrange(desc(mean_salary))
 ```
 
-## 2.2 Distribution of salary (raw vs. log)
+## 2.3 Distribution of salary (raw vs. log)
 
 ```{r}
-ggplot(data, aes(x = salary_in_usd)) +
+p_raw <- ggplot(data, aes(x = salary_in_usd)) +
   geom_histogram(fill = "skyblue", color = "white", bins = 30) +
   scale_x_continuous(labels = scales::dollar) +
   theme_minimal() +
-  labs(title = "Distribution of Salary (USD)", x =
-         "Salary in USD", y = "Count")
+  labs(title = "Distribution of Salary (USD)", x = "Salary in USD", y = "Count")
 
-ggplot(data, aes(x = log_salary)) +
+p_log <- ggplot(data, aes(x = log_salary)) +
   geom_histogram(fill = "skyblue", color = "white", bins = 30) +
   theme_minimal() +
-  labs(title = "Distribution of ln(Salary)", x =
-         "ln(Salary in USD)", y = "Count")
+  labs(title = "Distribution of ln(Salary)", x = "ln(Salary in USD)", y = "Count")
+
+cowplot::plot_grid(p_raw, p_log, ncol = 2)
 ```
 
 The raw salary is strongly right-skewed (long tail of high earners up to
 600,000 USD), while the log-transformed salary is close to symmetric — which is
-why later modeling tasks use `log_salary`.
+why the modeling tasks use `log_salary` as the response.
 
-## 2.3 Salary by job category
+## 2.4 Salary by job category
 
 ```{r}
-ggplot(data, aes(x = job_category, y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Job Category", x = "", y = "ln(Salary in USD)")
+salary_compare("job_category", "Job Category", flip = TRUE)
 ```
 
-## 2.4 Salary by experience level
+## 2.5 Salary by experience level
 
 ```{r}
-ggplot(data, aes(x = experience_level, y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Experience Level", x =
-         "Experience Level", y = "ln(Salary in USD)")
+salary_compare("experience_level", "Experience Level")
 ```
 
-## 2.5 Salary by company size
+## 2.6 Salary by company size
 
 ```{r}
-ggplot(data, aes(x = company_size, y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Company Size", x =
-         "Company Size", y = "ln(Salary in USD)")
+salary_compare("company_size", "Company Size")
 ```
 
-## 2.6 Salary by employment type
+## 2.7 Salary by employment type
 
 ```{r}
-ggplot(data, aes(x = employment_type, y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Employment Type", x =
-          "Employment Type", y = "ln(Salary in USD)")
+salary_compare("employment_type", "Employment Type")
 ```
 
-## 2.7 Salary by remote work ratio (discrete: 0/50/100)
+## 2.8 Salary by remote work ratio (discrete: 0/50/100)
 
 ```{r}
-ggplot(data, aes(x = factor(remote_ratio), y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Remote Work Ratio", x =
-         "Remote Ratio (%)", y = "ln(Salary in USD)")
+salary_compare("remote_ratio", "Remote Ratio (%)")
 ```
 
-## 2.8 Salary by company location group
+## 2.9 Salary by company location group
 
 ```{r}
-ggplot(data, aes(x = location_group, y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  coord_flip() +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Company Location", x =
-          "", y = "ln(Salary in USD)")
+salary_compare("location_group", "Company Location", flip = TRUE)
 ```
 
-## 2.9 Salary trend over time (work-year)
+## 2.10 Salary trend over time (work-year)
 
 ```{r}
-ggplot(data, aes(x = factor(work_year), y = log_salary)) +
-  geom_boxplot(fill = "skyblue", outlier.color = "red") +
-  theme_minimal() +
-  labs(title = "ln(Salary) by Work Year", x =
-         "Work Year", y = "ln(Salary in USD)")
+salary_compare("work_year", "Work Year")
 ```
 
-## 2.10 Number of jobs per category
+## 2.11 Number of jobs per category
 
 ```{r}
-ggplot(data, aes(x = job_category)) +
+df_bar <- data %>%
+  mutate(job_category = factor(job_category,
+                               levels = names(label_map$job_category),
+                               labels = unname(label_map$job_category)))
+ggplot(df_bar, aes(x = job_category)) +
   geom_bar(fill = "skyblue") +
   coord_flip() +
   theme_minimal() +
