@@ -1,7 +1,7 @@
 ---
 title: "Activity 1 — Task 4: Continuous Salary Regression Modeling"
 author: "Group 08"
-date: "2026-08-18"
+date: "2026-08-24"
 output:
   pdf_document:
     latex_engine: xelatex
@@ -13,22 +13,698 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = "../")
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = FALSE)
 ```
+
+This section addresses the first research question: *how accurately can we
+predict the salary of a Data Science professional worldwide, and which factors
+drive income levels?* We model `salary_in_usd` through its natural logarithm
+`log_salary`, because the exploratory analysis showed a strongly right-skewed
+distribution with a handful of legitimate executive-level salaries; working on
+the log scale accommodates that skew without discarding real observations, and
+it gives coefficients a convenient percentage interpretation.
+
+Seven models are fitted and compared: a **multiple linear regression**, first
+with all available predictors and then reduced by stepwise selection; a
+**polynomial regression** that lets the numeric predictors bend away from a
+straight line; **Ridge**, **LASSO**, and their **elastic-net** mixture with a
+cross-validated mixing weight, which stabilize estimates when many dummy
+variables share the workload; and a final linear model fitted on the
+Box–Cox-optimal power transform $\text{salary}^{\lambda}$, which lets the
+held-out data judge the response scale chosen in Section 4.2. All tuning uses
+training data only; the seven candidates are scored together on the held-out
+records in Section 4.5.
 
 ```{r}
 library(tidyverse)
-data <- read.csv("dataset/ds_salaries_clean.csv")
+library(glmnet)
+library(car)
+library(lmtest)
+library(MASS)
+library(tseries)   # jarque.bera.test
+library(sandwich)  # HC-robust standard errors
+library(broom)     # tidy coefficient tables
+
+data <- read.csv("activity1/dataset/ds_salaries_clean.csv")
+
+set.seed(2026)     # fixed seed: every randomized step below is reproducible
 ```
 
 # 4 Continuous Salary Regression Modeling
 
-## 4.1 Train / test split (time-aware 80:20 — older data trains, newer tests)
+## 4.1 Training and testing partitions
+
+Model quality is judged on observations not seen during fitting, so we split
+the 565 cleaned records into training (80%) and test (20%) sets. Salaries
+evolve over time, so the split leans toward recent data: training keeps all
+287 records from 2020–2021 plus 165 randomly sampled 2022 records (452 rows),
+while the 113-row test set contains only 2022 records — a *year-aware*
+rather than strictly chronological split, since about three of five 2022
+salaries also inform the fit. Holding out all of 2022 would have left a 49%
+test set, so the sample preserves the 80:20 balance.
+
+The draw is checked so that rare categories (contract and freelance
+employment have 5 and 4 records dataset-wide) stay represented in training;
+the fixed seed makes the split fully reproducible.
+
+```{r split-4-1}
+used_cols <- c("log_salary", "salary_in_usd", "experience_level", "employment_type",
+               "company_size", "job_category", "location_group", "remote_ratio",
+               "is_local", "work_year",
+               "exp_level_ord_scaled", "company_size_ord_scaled", "remote_ratio_scaled")
+stopifnot(nrow(data) == 565, sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
+
+# Factor baselines chosen for interpretability: coefficients then read as
+# contrasts against the common category (FT employment, Data Analyst,
+# rest-of-world location).
+data$experience_level <- factor(data$experience_level, levels = c("EN", "MI", "SE", "EX"))
+data$company_size     <- factor(data$company_size,     levels = c("S", "M", "L"))
+data$employment_type  <- relevel(factor(data$employment_type), ref = "FT")
+data$job_category     <- relevel(factor(data$job_category),   ref = "Data_Analyst")
+data$location_group   <- relevel(factor(data$location_group), ref = "Other")
+
+data <- data %>% mutate(row_id = row_number())
+
+train_old <- data %>% filter(work_year %in% c(2020, 2021))   # 287 older records
+pool_2022 <- data %>% filter(work_year == 2022)              # 278 recent records
+
+check_vars <- c("employment_type", "job_category", "location_group",
+                "experience_level", "company_size")
+
+repeat {
+  idx  <- sample(nrow(pool_2022), 165)
+  tr22 <- pool_2022[idx, ]
+  te   <- pool_2022[-idx, ]
+  tr   <- bind_rows(train_old, tr22)
+  ok <- all(vapply(check_vars,
+                   function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
+  if (ok) break
+}
+train <- tr
+test  <- te
+
+stopifnot(nrow(train) == 452, nrow(test) == 113, all(test$work_year == 2022))
+```
+
+Both partitions cover the same range of experience levels, job families, and
+employment types, as the following composition tables show:
+
+```{r}
+table(train$work_year);        table(test$work_year)
+table(train$experience_level); table(test$experience_level)
+table(train$job_category);     table(test$job_category)
+table(train$employment_type);  table(test$employment_type)
+```
 
 ## 4.2 Multiple Linear Regression
 
+We build the regression the way an analyst should: start from the simplest
+defensible choice — an ordinary linear model on the **raw dollar salary** —
+confront it with the classical assumptions, let a Box–Cox analysis select a
+better response scale, and then verify that the corrected model genuinely
+behaves better. Only after the response scale is settled do we refine the
+model and interpret its coefficients.
+
+### A reference model on raw dollars
+
+All models in this section share the same right-hand side — experience level,
+job category, employment type, company size, grouped employer location,
+remote-work ratio, and survey year. The reference version regresses the raw
+dollar amount on them:
+
+```{r raw-reference}
+ols_raw <- lm(salary_in_usd ~ experience_level + job_category + employment_type +
+                company_size + location_group + remote_ratio + work_year,
+              data = train)
+summary(ols_raw)
+```
+
+On its own scale the model is respectable at first glance (adjusted R² =
+0.476), but fit quality is not what concerns us — the assumptions are.
+
+### Diagnostic checking of the reference model
+
+The four base residual plots, formal normality tests, a Breusch–Pagan test
+for homoskedasticity, and Cook's distance (influence of single observations)
+are applied so that every assumption is
+*tested*, never assumed.
+
+```{r raw-diagnostics}
+diag_row <- function(label, mod) {
+  sw <- shapiro.test(resid(mod))
+  jb <- tseries::jarque.bera.test(resid(mod))
+  bp <- lmtest::bptest(mod)
+  tibble(response       = label,
+         Shapiro_p      = signif(sw$p.value, 3),
+         Jarque_Bera_p  = signif(jb$p.value, 3),
+         BP_stat        = round(unname(bp$statistic), 1),
+         BP_p           = signif(bp$p.value, 3),
+         Max_Cooks_D    = round(max(cooks.distance(mod)), 3))
+}
+diag_raw <- diag_row("salary_in_usd", ols_raw)
+diag_raw
+
+par(mfrow = c(2, 2)); plot(ols_raw); par(mfrow = c(1, 1))
+```
+
+Every check fails. Residual normality is rejected at astronomical
+significance (*p* ≈ 8·10⁻²²), errors are heteroskedastic (BP = 35.8,
+*p* = 0.043), and the largest Cook's distance reaches 0.18 — a handful of
+executive-level records visibly dominate the fitted line. An untransformed
+linear model is therefore not a trustworthy basis for inference or
+prediction.
+
+### Choosing the response scale: Box–Cox analysis
+
+The Box–Cox family asks which power $\text{salary}^{\lambda}$ makes the
+linear model most consistent with its assumptions:
+
+```{r boxcox-scale}
+bc <- MASS::boxcox(ols_raw, plotit = TRUE)
+lambda_hat <- bc$x[which.max(bc$y)]
+## Profile-likelihood 95% confidence interval for lambda
+cut_off  <- max(bc$y) - qchisq(0.95, 1) / 2
+lambda_ci <- range(bc$x[bc$y >= cut_off])
+cat("Box-Cox optimal lambda:", round(lambda_hat, 3), "\n")
+cat("95% CI: [", round(lambda_ci[1], 3), ",", round(lambda_ci[2], 3), "]\n")
+```
+
+The likelihood peaks at $\hat\lambda \approx 0.30$, with a 95%
+profile-likelihood interval $[0.26,\ 0.38]$ that excludes **both** special
+cases: $\lambda = 1$ (raw dollars, rejected above) and $\lambda = 0$ (the
+log). Formally, the data prefer an intermediate power. We adopt **ln(salary)**
+as the working response for its interpretable percentage coefficients, and
+give $\text{salary}^{0.3}$ the identical battery of assumption tests below;
+out-of-sample accuracy follows in Section 4.5.
+
+### The regression on ln(salary)
+
+$$\ln(\text{salary}_i) = \beta_0 + \beta_1\,\text{experience}_i +
+\beta_2\,\text{role}_i + \beta_3\,\text{contract type}_i +
+\beta_4\,\text{company size}_i + \beta_5\,\text{location}_i +
+\beta_6\,\text{remote ratio}_i + \beta_7\,\text{year}_i + \varepsilon_i$$
+
+Location enters through the grouped employer-country variable only. The
+employee-residence dummies are deliberately left out: for the largely
+non-remote workforce the two countries coincide, and carrying both would
+introduce near-duplicate predictors whose inflated variances distort every
+coefficient's standard error.
+
+```{r ols-full}
+ols_full <- lm(log_salary ~ experience_level + job_category + employment_type +
+                 company_size + location_group + remote_ratio + work_year,
+               data = train)
+summary(ols_full)
+```
+
+The transformed model explains about **59% of the variation in log-salary**
+(adjusted R² = 0.589) and is highly significant overall (*F* = 29.1 on 23 and
+428 df, *p* < 10⁻¹⁶) — a clear gain over the raw-scale reference.
+
+### Re-checking the assumptions after the transformation
+
+```{r ln-diagnostics}
+## The Box-Cox-optimal power scale receives the identical battery of tests,
+## so the transformation choice is judged on evidence rather than habit.
+z_train  <- train$salary_in_usd^lambda_hat
+ols_power <- lm(z_train ~ experience_level + job_category + employment_type +
+                  company_size + location_group + remote_ratio + work_year,
+                data = train)
+diag_power <- diag_row(paste0("salary^", round(lambda_hat, 2)), ols_power)
+diag_log <- diag_row("ln(salary)", ols_full)
+bind_rows(diag_raw, diag_power, diag_log)
+
+par(mfrow = c(2, 2)); plot(ols_full); par(mfrow = c(1, 1))
+
+## Generalized VIFs: a property of the predictor design matrix, hence
+## identical under any response scale — one table covers both models.
+vif_raw <- car::vif(ols_full)
+if (is.matrix(vif_raw)) {
+  vif_tab <- tibble(
+    term     = rownames(vif_raw),
+    GVIF     = vif_raw[, "GVIF"],
+    Df       = vif_raw[, "Df"],
+    gvif_adj = vif_raw[, "GVIF^(1/(2*Df))"]
+  )
+} else {
+  vif_tab <- tibble(term = names(vif_raw), GVIF = as.numeric(vif_raw),
+                    Df = 1, gvif_adj = sqrt(as.numeric(vif_raw)))
+}
+vif_tab
+```
+
+Side by side, the log transformation earns its place: the Shapiro–Wilk
+p-value improves roughly 250-million-fold (from 8·10⁻²² to 2·10⁻¹³), and the
+maximum Cook's distance halves (0.180 → 0.083), so no single record any
+longer dictates the fit. The Box–Cox-optimal power does better still on every
+criterion the likelihood flagged — normality improves by a further five
+orders of magnitude (*p* = 1.3·10⁻⁸), influence drops to 0.075, and in-sample
+fit edges ahead (adjusted R² 0.599 vs 0.589) — while its Breusch–Pagan
+statistic (39.0) sits well below the log's 58.0, though heteroskedasticity
+remains significant on every scale. Two conclusions follow. First, no
+transform achieves normality or constant variance — the rejections trace to
+the thin cluster of very low salaries documented in the EDA — so robust
+inference is required regardless of scale. Second, because the power scale
+dominates on diagnostics, keeping ln(salary) needs empirical backing: the
+held-out data arbitrate the two transformed models in Section 4.5. On the
+collinearity side, all df-adjusted GVIFs lie between 1.03 and 1.21 — far
+under any common threshold — confirming that the single location route
+avoided redundancy.
+
+### Refining the model by AIC
+
+The full model contains two linear trend terms (`remote_ratio`, `work_year`)
+whose usefulness a parsimonious model should justify. Stepwise selection in
+both directions, guided by Akaike's information criterion, removes exactly
+those two terms while keeping all five factor blocks: the AIC improves from
+740 to 738 at unchanged adjusted R², i.e., the simpler model predicts equally
+well with two-thirds of the terms.
+
+```{r ols-stepwise}
+ols_step <- step(ols_full, direction = "both", trace = FALSE)
+summary(ols_step)
+
+cat("\nTerms dropped (full model -> stepwise model):",
+    setdiff(attr(terms(ols_full), "term.labels"),
+            attr(terms(ols_step), "term.labels")), "\n")
+
+tibble(
+  model   = c("Full OLS", "Stepwise-reduced OLS"),
+  AIC     = c(AIC(ols_full), AIC(ols_step)),
+  adj_R2  = c(summary(ols_full)$adj.r.squared, summary(ols_step)$adj.r.squared),
+  n_terms = c(length(attr(terms(ols_full), "term.labels")),
+              length(attr(terms(ols_step), "term.labels")))
+)
+```
+
+### Robust inference under unequal error variances
+
+Unequal error variances invalidate ordinary standard errors, so the
+coefficient table below is accompanied by HC1-robust
+(heteroskedasticity-consistent) ones:
+
+```{r robust-inference}
+robust_se <- lmtest::coeftest(ols_step, vcov = sandwich::vcovHC(ols_step, type = "HC1"))
+cat("HC1-robust inference for the stepwise-selected ln(salary) model:\n")
+print(robust_se)
+```
+
+The robust standard errors leave the significance picture essentially
+unchanged; the single exception — medium company size — is flagged below.
+
+### What drives salaries?
+
+Because the response is a logarithm, each coefficient translates into an
+approximate percentage change in salary through $100\,(e^{\beta}-1)$:
+
+```{r salary-drivers}
+coef_pct <- broom::tidy(ols_step) %>%
+  mutate(pct_effect = 100 * (exp(estimate) - 1)) %>%
+  dplyr::select(term, estimate, p.value, pct_effect)
+print(coef_pct, n = 30)
+```
+
+Four patterns stand out.
+
+**Experience dominates.** Relative to an entry-level professional, mid-level
+colleagues earn about 26% more, seniors about 75% more, and executives about
+168% more — a steep, strictly increasing gradient that makes seniority the
+single strongest career-side lever in the data.
+
+**Role matters within the field.** Against the Data-Analyst baseline, moving
+into engineering (+25%) or science (+29%) pays moderately; specializing in
+machine learning/AI (+47%), leading teams (+48%), or research (+64%) pays
+substantially more. The heterogeneous "Other" category is statistically
+indistinguishable from analysts, which supports keeping it separate rather
+than forcing it into another family.
+
+**Contract structure shapes pay.** Part-time (−48%) and freelance (−64%)
+arrangements earn significantly less than full-time contracts, consistent
+with partial-year or project-based engagement; contract work shows a positive
+but unreliable premium (+42%), unsurprising given only five such records.
+
+**Geography sets the level.** Holding profession constant, a US-based
+employer pays roughly 170% above the rest-of-world baseline — by far the
+largest single effect in the model — with Canada (+90%), Great Britain
+(+85%), Germany (+77%) and France (+42%) forming a clear second tier, while
+India-based employers pay about 47% below it. Spain is indistinguishable from
+the baseline. Company size matters less: large firms pay about 30% more than
+small ones (*p* < 0.001); medium firms sit at +16%, marginal on ordinary
+errors (*p* = 0.052) and not significant under robust ones (*p* = 0.125).
+
 ## 4.3 Polynomial Regression
 
-## 4.4 Ridge / LASSO Regression (scaled features)
+Stepwise selection suggested the linear trend terms added little, but that
+raises a subtler question: is the relationship curved? Polynomial regression
+answers it by allowing `remote_ratio` and `work_year` each to bend instead of
+following a straight line. Both variables take exactly three distinct values
+(0/50/100 and 2020/2021/2022), so degree 3 is not identifiable; degree 2 is
+the ceiling and effectively lets every level carry its own effect. We compare
+the linear and quadratic specifications with the nested *F*-test.
 
-## 4.5 Model comparison summary
+```{r polynomial}
+base_terms <- setdiff(attr(terms(ols_step), "term.labels"), c("remote_ratio", "work_year"))
+base_formula_str <- paste("log_salary ~", paste(base_terms, collapse = " + "))
+
+fit_poly <- function(degree) {
+  f <- as.formula(paste0(base_formula_str,
+                          " + poly(remote_ratio, ", degree, ")",
+                          " + poly(work_year, ", degree, ")"))
+  lm(f, data = train)
+}
+
+poly_linear    <- fit_poly(1)   # straight-line benchmark
+poly_quadratic <- fit_poly(2)   # quadratic alternative
+
+tibble(
+  degree = c(1, 2),
+  AIC    = c(AIC(poly_linear), AIC(poly_quadratic)),
+  adj_R2 = c(summary(poly_linear)$adj.r.squared, summary(poly_quadratic)$adj.r.squared)
+)
+
+anova_poly <- anova(poly_linear, poly_quadratic)
+anova_poly
+
+poly_model <- if (anova_poly$`Pr(>F)`[2] < 0.05) poly_quadratic else poly_linear
+
+reset_result <- lmtest::resettest(poly_model)
+cat("\nRESET test on selected model: F =", round(reset_result$statistic, 3),
+    " p =", signif(reset_result$p.value, 4), "\n")
+```
+
+The quadratic specification is preferred: the *F*-test rejects the purely
+linear form (*F* = 3.60, *p* = 0.028), adjusted R² edges up from 0.589 to
+0.594, and the RESET test finds no remaining functional-form misspecification
+(*F* = 2.13, *p* = 0.12). In substantive terms, fully-remote and fully
+on-site arrangements sit at different pay levels than a straight line through
+the middle would suggest — the 50% hybrid point behaves differently from the
+average of the extremes.
+
+## 4.4 Ridge and LASSO Regression
+
+Ordinary least squares treats all twenty columns as free parameters.
+Shrinkage methods trade a little bias for variance reduction and, in the
+LASSO's case, automatic variable selection — a useful cross-check on the
+stepwise route. They require standardized inputs: all four numeric predictors
+are z-scored with training means and standard deviations, applied unchanged
+to the test records.
+
+```{r ridge-lasso-matrices}
+## Training-only z-scaling of every numeric input; the identical transform
+## is applied to test.
+tr_scale <- function(col) {
+  m <- mean(train[[col]]); s <- sd(train[[col]])
+  list(train = (train[[col]] - m) / s, test = (test[[col]] - m) / s)
+}
+for (col in c("exp_level_ord", "company_size_ord", "remote_ratio", "work_year")) {
+  sc <- tr_scale(col)
+  train[[paste0(col, "_ts")]] <- sc$train
+  test[[paste0(col, "_ts")]]  <- sc$test
+}
+
+build_matrix <- function(df) {
+  model.matrix(
+    ~ exp_level_ord_ts + company_size_ord_ts + remote_ratio_ts +
+      work_year_ts + job_category + employment_type + location_group,
+    data = df
+  )[, -1]   # glmnet supplies its own intercept
+}
+
+x_train <- build_matrix(train)
+x_test  <- build_matrix(test)
+y_train <- train$log_salary
+y_test  <- test$log_salary
+dim(x_train); dim(x_test)
+```
+
+The penalty strength λ is tuned by ten-fold cross-validation within the
+training set; prediction uses `lambda.min`, with the sparser `lambda.1se`
+reported for reference.
+
+```{r ridge-lasso-cv}
+set.seed(2026)
+cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0, nfolds = 10)
+set.seed(2026)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10)
+
+cat("Ridge: lambda.min =", cv_ridge$lambda.min, " lambda.1se =", cv_ridge$lambda.1se, "\n")
+cat("LASSO: lambda.min =", cv_lasso$lambda.min, " lambda.1se =", cv_lasso$lambda.1se, "\n")
+
+plot(cv_ridge); title("Ridge cross-validation curve", line = 2.5)
+plot(cv_lasso); title("LASSO cross-validation curve", line = 2.5)
+
+## Robustness of the endpoint choice: a sweep over the full elastic-net
+## mixing range finds the CV surface flat, so neither pure penalty is a
+## lucky guess.
+enet_sweep <- vapply(seq(0, 1, by = 0.1), function(a) {
+  set.seed(2026)
+  sqrt(min(cv.glmnet(x_train, y_train, alpha = a, nfolds = 10)$cvm))
+}, numeric(1))
+cat("CV RMSE across alpha = 0,0.1,...,1:",
+    sprintf("%.4f-%.4f (range %.4f)", min(enet_sweep), max(enet_sweep),
+            diff(range(enet_sweep))), "\n")
+
+plot(seq(0, 1, by = 0.1), enet_sweep, type = "b", pch = 19,
+     xlab = expression(alpha * "  (0 = pure Ridge, 1 = pure LASSO)"),
+     ylab = "Cross-validated RMSE (log points)",
+     main = "Elastic-net mixing sweep")
+
+## Tuned elastic net: alpha picked by the same 10-fold CV, refit for scoring
+## in Section 4.5 alongside its two pure-parent special cases.
+alpha_best <- seq(0, 1, by = 0.1)[which.min(enet_sweep)]
+set.seed(2026)
+cv_elastic <- cv.glmnet(x_train, y_train, alpha = alpha_best, nfolds = 10)
+cat("Selected elastic-net alpha:", alpha_best,
+    "| predictor columns kept at lambda.min:",
+    sum(as.numeric(coef(cv_elastic, s = "lambda.min"))[-1] != 0), "/", ncol(x_train), "\n")
+```
+
+Sweeping the mixing parameter across its full range ($\alpha$ = 0, 0.1, …, 1)
+moves the cross-validated error by less than 0.15%, and every mixture retains
+all twenty columns at $\lambda_{\min}$. With the surface this flat there is no
+meaningful interior optimum; the CV-selected mixture
+($\alpha$ = `r round(alpha_best, 1)`) still joins the Section 4.5 ranking so
+that the comparison covers the entire penalty path.
+
+Which variables survive the LASSO penalty, and do they agree with the stepwise
+choice? Since LASSO names individual dummy columns while stepwise names whole
+variables, survivors are first mapped back to their parent variables before
+comparing.
+
+```{r lasso-variable-selection}
+lasso_coefs_min <- coef(cv_lasso, s = "lambda.min")
+lasso_survivors <- setdiff(rownames(lasso_coefs_min)[which(lasso_coefs_min[, 1] != 0)],
+                           "(Intercept)")
+cat("LASSO retains", length(lasso_survivors), "of", nrow(lasso_coefs_min) - 1,
+    "columns at lambda.min\n")
+
+parent_terms <- c("exp_level_ord_ts", "company_size_ord_ts",
+                  "remote_ratio_ts", "work_year_ts",
+                  "job_category", "employment_type", "location_group")
+map_to_parent <- function(dummy_names) {
+  vapply(dummy_names, function(nm) {
+    hit <- parent_terms[startsWith(nm, parent_terms)]
+    if (length(hit) == 0) nm else hit[which.max(nchar(hit))]
+  }, character(1), USE.NAMES = FALSE)
+}
+canonical <- c(exp_level_ord_ts         = "experience_level",
+               company_size_ord_ts      = "company_size",
+               remote_ratio_ts          = "remote_ratio",
+               work_year_ts             = "work_year")
+lasso_parents <- unique(map_to_parent(lasso_survivors))
+lasso_parents <- unique(ifelse(lasso_parents %in% names(canonical),
+                               canonical[lasso_parents], lasso_parents))
+stepwise_terms <- attr(terms(ols_step), "term.labels")
+
+cat("Selected by BOTH:", intersect(stepwise_terms, lasso_parents), "\n")
+cat("Stepwise only:",     setdiff(stepwise_terms, lasso_parents), "\n")
+cat("LASSO only:        ", setdiff(lasso_parents, stepwise_terms), "\n")
+```
+
+The two selection philosophies converge on the same story: both retain the
+five substantive blocks — experience level, job family, contract type,
+company size, and location. LASSO additionally preserves small linear
+`remote_ratio` and `work_year` components that AIC pruning had discarded;
+their coefficients are negligible in size, so the disagreement is cosmetic
+rather than substantive.
+
+A final sensitivity check replaces the ordinal encodings of experience and
+company size with full dummies inside the LASSO, the two variants being
+compared by ten-fold cross-validation on the training data. Accuracy hardly
+moves (CV RMSE 0.5491 vs 0.5514): the ordinal simplification costs nothing
+predictive.
+
+```{r sensitivity-encoding}
+build_matrix_factor <- function(df) {
+  model.matrix(
+    ~ experience_level + company_size + remote_ratio_ts + work_year_ts +
+      job_category + employment_type + location_group,
+    data = df
+  )[, -1]
+}
+x_train_f <- build_matrix_factor(train)
+
+set.seed(2026)
+cv_lasso_factor <- cv.glmnet(x_train_f, y_train, alpha = 1, nfolds = 10)
+
+cat("LASSO CV RMSE (log scale, training folds):\n")
+cat("  ordinal encoding:", round(sqrt(min(cv_lasso$cvm)), 4),
+    "| factor-dummy encoding:", round(sqrt(min(cv_lasso_factor$cvm)), 4), "\n")
+```
+
+## 4.5 Predictive performance on the held-out data
+
+All seven candidate models now score the 113 untouched 2022 records, in log
+points where they were fitted and in US dollars where they matter.
+Exponentiating a log prediction returns the median of the salary
+distribution, understating its mean, so predictions are rescaled by **Duan's
+smearing factor** — the mean of exponentiated training residuals, computed
+without reference to the test set. Smearing presumes homoskedastic errors
+(rejected in Section 4.2), so dollar figures are approximations, appropriate
+for comparing models rather than as exact forecasts.
+
+```{r model-comparison}
+pred_log <- list(
+  `Full OLS`                    = predict(ols_full, newdata = test),
+  `Stepwise-reduced OLS`        = predict(ols_step, newdata = test),
+  `Polynomial regression`       = predict(poly_model, newdata = test),
+  `Ridge regression`            = as.numeric(predict(cv_ridge, newx = x_test, s = "lambda.min")),
+  `LASSO regression`            = as.numeric(predict(cv_lasso, newx = x_test, s = "lambda.min")),
+  `Elastic net regression`      = as.numeric(predict(cv_elastic, newx = x_test, s = "lambda.min"))
+)
+
+smear <- c(
+  `Full OLS`              = mean(exp(resid(ols_full))),
+  `Stepwise-reduced OLS`  = mean(exp(resid(ols_step))),
+  `Polynomial regression` = mean(exp(resid(poly_model))),
+  `Ridge regression`      = mean(exp(y_train - as.numeric(predict(cv_ridge, newx = x_train, s = "lambda.min")))),
+  `LASSO regression`      = mean(exp(y_train - as.numeric(predict(cv_lasso, newx = x_train, s = "lambda.min")))),
+  `Elastic net regression`= mean(exp(y_train - as.numeric(predict(cv_elastic, newx = x_train, s = "lambda.min"))))
+)
+
+metrics_row <- function(model_name, pred_log_vals, y_log, smear_val) {
+  err_log  <- pred_log_vals - y_log
+  r2_log   <- 1 - sum(err_log^2) / sum((y_log - mean(y_log))^2)
+
+  pred_usd <- exp(pred_log_vals) * smear_val
+  y_usd    <- exp(y_log)
+  err_usd  <- pred_usd - y_usd
+  r2_usd   <- 1 - sum(err_usd^2) / sum((y_usd - mean(y_usd))^2)
+
+  tibble(model = model_name,
+         RMSE_log = sqrt(mean(err_log^2)), MAE_log = mean(abs(err_log)), R2_log = r2_log,
+         RMSE_usd = sqrt(mean(err_usd^2)), MAE_usd = mean(abs(err_usd)), R2_usd = r2_usd)
+}
+
+## Seventh and final entrant: the Box-Cox power-scale model from Section 4.2.
+## Its dollar forecasts already embed the generalized smearing, so they enter
+## the common metrics through their log transform (smearing factor 1).
+z_hat     <- as.numeric(predict(ols_power, newdata = test))
+resid_z   <- residuals(ols_power)
+pred_power <- vapply(z_hat, function(zj)
+  mean((pmax(zj + resid_z, 1e-6))^(1 / lambda_hat)), numeric(1))
+
+comparison_table <- bind_rows(
+  metrics_row("Multiple linear regression - full",          pred_log$`Full OLS`,              y_test, smear["Full OLS"]),
+  metrics_row("Multiple linear regression - stepwise",      pred_log$`Stepwise-reduced OLS`,  y_test, smear["Stepwise-reduced OLS"]),
+  metrics_row("Polynomial regression",                      pred_log$`Polynomial regression`, y_test, smear["Polynomial regression"]),
+  metrics_row("Ridge regression",                           pred_log$`Ridge regression`,      y_test, smear["Ridge regression"]),
+  metrics_row("LASSO regression",                           pred_log$`LASSO regression`,      y_test, smear["LASSO regression"]),
+  metrics_row("Elastic net regression",                     pred_log$`Elastic net regression`, y_test, smear["Elastic net regression"]),
+  metrics_row("Power-transformed OLS (salary^0.3)",         log(pred_power),                  y_test, 1)
+)
+comparison_table
+
+write.csv(comparison_table, "activity1/task04_model_comparison.csv", row.names = FALSE)
+
+op <- par(mar = c(4.5, 14, 2.5, 1))
+ord <- order(comparison_table$RMSE_log)
+plot(comparison_table$RMSE_log[ord], seq_along(ord), pch = 19,
+     xlim = c(0.414, 0.4285), xlab = "Test RMSE, log scale",
+     yaxt = "n", ylab = "", main = "Seven candidates on one held-out set")
+axis(2, at = seq_along(ord), labels = comparison_table$model[ord],
+     las = 1, cex.axis = 0.75)
+par(op)
+```
+
+### Is the logarithm the right response scale?
+
+The log response is verified empirically. Fitted with identical predictors,
+the alternatives are the **raw dollar salary** and the
+**Box–Cox-optimal power** $\text{salary}^{\hat\lambda}$ found earlier
+($\hat\lambda \approx 0.30$, between log and square root). Because error
+metrics on different scales are incomparable, all three variants are scored
+on predicted US dollars; power predictions return through the inverse
+transform, again with Duan's smearing applied on that scale.
+
+```{r response-scale-check}
+# (a) raw-dollar reference model carried over from Section 4.2
+pred_raw <- predict(ols_raw, newdata = test)
+
+# (b) Box-Cox-optimal power model — dollar forecasts carried over from
+# the model-comparison chunk above
+
+# (c) OLS on ln(salary): the Section 4.2 model with its smearing factor
+pred_logusd <- exp(pred_log$`Full OLS`) * smear["Full OLS"]
+
+score_usd <- function(model_name, usd_pred, y_log) {
+  y_usd    <- exp(y_log)
+  err_usd  <- usd_pred - y_usd
+  err_lpt  <- log(pmax(usd_pred, 1)) - y_log   # log-point errors of the dollar forecast
+  tibble(model  = model_name,
+         RMSE_log = sqrt(mean(err_lpt^2)), MAE_log = mean(abs(err_lpt)),
+         R2_log   = 1 - sum(err_lpt^2) / sum((y_log - mean(y_log))^2),
+         RMSE_usd = sqrt(mean(err_usd^2)), MAE_usd = mean(abs(err_usd)),
+         R2_usd   = 1 - sum(err_usd^2) / sum((y_usd - mean(y_usd))^2))
+}
+
+scale_table <- bind_rows(
+  score_usd("OLS - raw dollars",                    pred_raw,    y_test),
+  score_usd(paste0("OLS - salary^", round(lambda_hat, 2)), pred_power, y_test),
+  score_usd("OLS - ln(salary)",                     pred_logusd, y_test)
+)
+scale_table
+```
+
+The comparison settles the question empirically. Fitting **raw dollars**
+fails in relative terms: although its dollar-level RMSE *looks* respectable,
+its log-point errors are catastrophic (R²_log = −11.5) — an untransformed
+line is dominated by the handful of \$500k+ executive records and therefore
+misprices everyone else by wide percentages. Between the two transformed
+scales, the **Box–Cox-optimal power** ($\hat\lambda \approx 0.30$) wins
+consistently — about \$3k lower dollar-RMSE and a materially higher R² than
+the logarithm — because damping large salaries *less* aggressively than ln
+preserves more information about the top of the pay distribution while still
+stabilizing the variance.
+
+We nevertheless keep **ln(salary) as the primary specification**: its
+coefficients read directly as percentage effects, which anchors the driver
+interpretation in Section 4.2. The power-transformed regression is no longer
+a side experiment — it competes in the seven-model ranking above, where it
+posts the best score on every column, and it is carried forward to Sections
+6–7 as a concrete, data-backed candidate: when pure prediction accuracy
+outranks interpretability, refitting on $\text{salary}^{0.3}$ is the single
+cheapest upgrade this analysis found.
+
+Three observations close the modeling exercise. First, **the Box–Cox
+power-scale model delivers the best out-of-sample accuracy** — lowest RMSE
+and highest R² on both scales (RMSE 0.416 log points, ≈ $43,100 in dollar
+terms) — confirming that the likelihood's preference for an intermediate
+power was not a training-set artifact; Ridge follows within a hair (0.4163 vs
+0.4162 log-RMSE). Second, the
+field is tight: all seven models fall within roughly 0.01 log-RMSE of each
+other (about one percentage point of salary error), so the choice among them
+hinges more on parsimony and stability than raw accuracy — the tuned elastic
+net lands mid-pack, as its flat CV profile predicted. Third, out-of-sample
+R² around 0.42–0.45 versus 0.59 in-sample indicates moderate generalization
+to the newest data — expected when the test set is drawn entirely from the
+newest year while older years dominate training. Formal ranking, statistical
+comparison, and the final model recommendation follow in Section 6.
+
+In sum, the regression analysis answers the accuracy half of the first
+research question with typical absolute errors of roughly \$33–38k per
+prediction for the strongest models (root-mean-square errors run higher,
+\$43–50k) and identifies the key income drivers asked by the second half:
+experience level and geographic context tower over everything else, role
+specialization adds a substantial premium, and contract structure and company
+size fine-tune the total.
