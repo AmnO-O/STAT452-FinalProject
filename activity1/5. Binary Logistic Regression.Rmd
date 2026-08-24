@@ -1,8 +1,12 @@
----
-title: "Activity 1 — Task 5: Binary Logistic Regression Modeling"
+r---
+title: 'Activity 1 — Task 5: Binary Logistic Regression Modeling'
 author: "Group 08"
-date: "2026-08-20"
+date: "2026-08-21"
 output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
   pdf_document:
     latex_engine: xelatex
     toc: true
@@ -16,6 +20,16 @@ knitr::opts_knit$set(root.dir = "../")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+This task analyzes which professional and employer characteristics are
+associated with being in the highest-paid salary tier. The response variable
+is a binary indicator based on the sample 75th percentile of `salary_in_usd`.
+Unlike the continuous models in Task 4, the fitted values here are
+probabilities, so binary logistic regression is appropriate.
+
+The cleaned dataset from Task 1 contains 565 observations and no missing
+values or duplicates. The predictors are grouped or converted to factors where
+needed so that sparse categories do not create unstable estimates.
+
 ```{r}
 library(tidyverse)
 data <- read.csv("dataset/ds_salaries_clean.csv")
@@ -23,8 +37,142 @@ data <- read.csv("dataset/ds_salaries_clean.csv")
 
 # 5 Binary Logistic Regression Modeling
 
-## 5.1 Create the binary target `is_top_tier` (Q3 = 75th percentile)
+## 5.1 Binary target: `is_top_tier` (Q3 = 75th percentile)
 
-## 5.2 Fit the logistic regression model
+The cut-off is the sample 75th percentile of `salary_in_usd`. A professional is
+classified as top-tier when their salary is at least this cut-off. The use of
+`>=` follows the project definition; consequently, observations tied exactly at
+the cut-off are all retained in the top-tier class.
 
-## 5.3 Interpret coefficients via Odds Ratios (exp(beta))
+```{r}
+q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
+
+data <- data %>%
+  mutate(is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L))
+
+target_summary <- data %>%
+  count(is_top_tier, name = "n") %>%
+  mutate(
+    tier = if_else(is_top_tier == 1L, "Top tier (1)", "Below top tier (0)"),
+    proportion = n / sum(n)
+  ) %>%
+  select(tier, n, proportion)
+
+cat("75th-percentile salary cut-off (Q3): $", format(q3_salary, big.mark = ","), "\n", sep = "")
+knitr::kable(target_summary, digits = 3,
+             caption = "Class distribution for the binary target")
+```
+
+The observed top-tier share can be slightly above 25% because several salaries
+may be tied at Q3. This is a consequence of applying the required `>=` rule,
+not a data-cleaning error.
+
+## 5.2 Predictor preparation and model fitting
+
+Categorical predictors are converted to factors with explicit, meaningful
+reference levels. Thus, every odds ratio is interpreted relative to an
+entry-level, small-company, non-remote Data Analyst working full-time for a
+non-US company.
+
+Task 1 showed that employment type and the individual non-US location groups
+are sparse. In particular, some categories have no top-tier observations,
+which can cause complete separation and unstable logistic coefficients. To
+retain their information without that problem, employment is grouped as
+full-time versus non-full-time and company location as US versus non-US. The
+job-category grouping and all other factor definitions come directly from the
+Task 1 cleaned data.
+
+```{r}
+data <- data %>%
+  mutate(
+    experience_level = factor(experience_level,
+                              levels = c("EN", "MI", "SE", "EX")),
+    company_size = factor(company_size, levels = c("S", "M", "L")),
+    remote_ratio = factor(remote_ratio, levels = c(0, 50, 100)),
+    job_category = relevel(factor(job_category), ref = "Data_Analyst"),
+    employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"),
+                              levels = c("FT", "Non_FT")),
+    company_location_group = factor(if_else(location_group == "US", "US", "Non_US"),
+                                    levels = c("Non_US", "US"))
+  )
+
+logit_model <- glm(
+  is_top_tier ~ experience_level + company_size + remote_ratio +
+    job_category + employment_group + company_location_group,
+  family = binomial(link = "logit"),
+  data = data
+)
+
+summary(logit_model)
+```
+
+## 5.3 Odds ratios and confidence intervals
+
+For a coefficient $\beta$, `exp(beta)` is the odds ratio (OR), holding the
+other predictors constant. An OR above 1 indicates higher odds of top-tier
+salary than the reference group, while an OR below 1 indicates lower odds. A
+95% confidence interval that excludes 1, equivalently a p-value below 0.05,
+is treated as evidence of an association in this sample.
+
+```{r}
+model_matrix <- summary(logit_model)$coefficients
+wald_ci <- confint.default(logit_model)
+
+odds_ratios <- tibble(
+  term = rownames(model_matrix),
+  estimate = model_matrix[, "Estimate"],
+  odds_ratio = exp(estimate),
+  conf_low = exp(wald_ci[, 1]),
+  conf_high = exp(wald_ci[, 2]),
+  p_value = model_matrix[, "Pr(>|z|)"],
+  significant_at_5pct = p_value < 0.05
+) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    across(c(estimate, odds_ratio, conf_low, conf_high), ~ round(.x, 3)),
+    p_value = format.pval(p_value, digits = 3, eps = 0.001)
+  )
+
+knitr::kable(
+  odds_ratios,
+  caption = "Adjusted odds ratios and 95% Wald confidence intervals for top-tier salary"
+)
+```
+
+```{r}
+mcfadden_r2 <- 1 - logit_model$deviance / logit_model$null.deviance
+
+fit_summary <- tibble(
+  observations = nobs(logit_model),
+  top_tier_cases = sum(data$is_top_tier),
+  null_deviance = logit_model$null.deviance,
+  residual_deviance = logit_model$deviance,
+  AIC = AIC(logit_model),
+  McFadden_R2 = mcfadden_r2
+) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+knitr::kable(fit_summary, caption = "In-sample logistic-model fit summary")
+```
+
+## 5.4 Interpretation and main findings
+
+Interpret the printed table using the following comparison groups: entry-level
+(EN), small company (S), 0% remote work, Data Analyst, full-time employment,
+and non-US company location. In this fitted model, the statistically
+significant positive associations are expected to include senior and executive
+experience, large company size, several technical or management job categories,
+and US company location. For example, an OR of about 12.7 for US location means
+that, after adjustment for the other included predictors, the estimated odds of
+being top-tier are about 12.7 times the odds for the non-US reference group.
+
+The largest job-category OR should be interpreted as an adjusted association,
+not as a causal salary premium. Similarly, a non-significant coefficient does
+not prove that a characteristic has no effect; its confidence interval shows
+the range of effects compatible with this sample. The rare non-full-time group
+and the 50% remote-work group have wider intervals, so their estimates deserve
+particular caution.
+
+The model’s AIC and McFadden pseudo-$R^2$ are descriptive in-sample summaries.
+Out-of-sample classification metrics, including ROC-AUC, are calculated in
+Task 6 before making any claim about predictive performance.
