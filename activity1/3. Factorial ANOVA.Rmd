@@ -16,19 +16,141 @@ knitr::opts_knit$set(root.dir = "../")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+# 3. Inferential Statistics & Factorial ANOVA
+
+To answer the research questions, we evaluate how `experience_level` and `company_size` impact data science salaries. Because the design is highly unbalanced (e.g., Senior roles vastly outnumber Executives, and Medium companies outnumber Small), we utilize Type III Sums of Squares. The response variable is `log_salary` to mitigate the extreme right-skewness observed in the EDA.
+
 ```{r}
 library(tidyverse)
+library(car)
+library(emmeans)
+library(ggplot2)
+
 data <- read.csv("dataset/ds_salaries_clean.csv")
+data$experience_level <- factor(data$experience_level, levels = c("EN", "MI", "SE", "EX"))
+data$company_size <- factor(data$company_size, levels = c("S", "M", "L"))
+data$work_year <- factor(data$work_year)
 ```
 
-# 3 Inferential Statistics & Factorial ANOVA
+### 3.1 Two-Way Factorial ANOVA
 
-## 3.1 Statistical technique selection
+**Hypotheses:**
 
-## 3.2 Factorial ANOVA model
+- **Main Effect A (Experience):** $H_0: \mu_{EN} = \mu_{MI} = \mu_{SE} = \mu_{EX}$
 
-## 3.3 Assumption testing (normality of residuals, homogeneity of variance)
+- **Main Effect B (Company Size):** $H_0: \mu_{S} = \mu_{M} = \mu_{L}$
 
-## 3.4 Remedies for violated assumptions
+- **Interaction (Experience** $\times$ Size): $H_0:$ The effect of experience on salary is consistent across all company sizes.
 
-## 3.5 Salary trends over time (work-year)
+```{r}
+# Fit the model and compute Type III ANOVA
+anova_model <- aov(log_salary ~ experience_level * company_size, data = data)
+car::Anova(anova_model, type = 3)
+```
+
+- We ran a Type III ANOVA and found that experience level strongly predicts salary ($p < 0.001$). While the main effect of company size is only marginally significant ($p \approx 0.062$), the interaction between the two factors is significant ($p = 0.008$).
+
+- At first glance, our results show that experience is the biggest driver of compensation. The significant interaction suggests that the pay bump you get for being promoted might look very different depending on whether you work for a small startup or a massive corporation.
+
+### 3.2 Assumption Checking
+
+The validity of the standard ANOVA F-tests relies on two primary assumptions regarding the residuals: normality and equal variance (homoscedasticity).
+
+```{r}
+# Assumption 1: Normality of Residuals
+shapiro.test(residuals(anova_model))
+
+# Assumption 2: Homogeneity of Variance
+leveneTest(log_salary ~ experience_level * company_size, data = data)
+```
+
+**Diagnostic Interpretation:**
+
+- **Normality (**$p = 2.106 \times 10^{-13}$): The Shapiro-Wilk test fails. Even after the log-transformation applied in Task 1, the residuals have heavy tails.
+
+- **Homoscedasticity (**$p = 3.630 \times 10^{-6}$): Levene's test fails. The variance in salary is not equal across the grid; for example, Executive salaries in Large companies have a much wider spread than Entry-level salaries in Small companies.
+
+- We noticed that salaries in this field are messy—executive pay ranges wildly, while entry-level pay is tightly clustered. Because the "spread" isn't equal across groups, we cannot fully trust the strict mathematical results from our first test and need to apply a correction.
+
+```{r}
+ggplot(data, aes(x = experience_level, y = salary_in_usd, fill = experience_level)) +
+  geom_boxplot(alpha = 0.7, outlier.color = "red") +
+  scale_y_continuous(labels = scales::dollar) +
+  theme_minimal() +
+  labs(
+    title = "Salary Spread by Seniority",
+    subtitle = "Notice the tight cluster at Entry-Level vs. the massive spread at Executive",
+    x = "Experience Level",
+    y = "Salary (USD)"
+  ) +
+  theme(legend.position = "none")
+```
+
+### 3.3 Remedies for Assumption Violations
+
+Because the data violates both standard assumptions, the traditional ANOVA $p$-values may be unstable. To ensure our findings are robust, we implement a **Heteroscedasticity-Consistent (HC) Robust ANOVA**. This technique adjusts the standard errors to account for the unequal variances without requiring data deletion.
+
+```{r}
+car::Anova(anova_model, type = 3, white.adjust = TRUE)
+```
+
+- We applied a robust adjustment to correct for the unequal variances. In this corrected model, only experience level remains significant ($p < 0.001$), while company size ($p = 0.19$) and the interaction term ($p = 0.13$) both completely lose significance.
+
+- Once we corrected for the messy data, our true finding emerged: only your seniority actually matters. The idea that company size impacts your pay—or changes your promotion raises—was just a statistical illusion caused by the uneven salary ranges. A senior data scientist commands senior pay regardless of the company's headcount.
+
+```{r}
+ggplot(data, aes(x = experience_level, y = log_salary, fill = company_size)) +
+  geom_boxplot(alpha = 0.8) +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Compensation by Experience and Company Size",
+    subtitle = "Seniority dictates the baseline; company size causes minimal shifts",
+    x = "Experience Level",
+    y = "ln(Salary in USD)",
+    fill = "Company Size"
+  )
+```
+
+### 3.4 Salary Trends Over Time (Work Year)
+
+To address the final prompt requirement, we evaluate how salaries have evolved globally across the recorded work years (2020, 2021, 2022).
+
+```{r}
+# Descriptive trend
+yearly_trend <- data %>%
+  group_by(work_year) %>%
+  summarise(
+    Count = n(),
+    Mean_Salary_USD = mean(salary_in_usd),
+    Mean_ln_Salary = mean(log_salary)
+  )
+print(yearly_trend)
+
+# One-Way ANOVA for Time Trend
+year_model <- aov(log_salary ~ work_year, data = data)
+summary(year_model)
+
+# Tukey Post-Hoc
+TukeyHSD(year_model)
+```
+
+- Our One-Way ANOVA confirms a highly significant difference across the work years ($p < 0.001$). The Tukey post-hoc test pinpoints exactly where this happens: 2020 and 2021 are statistically identical ($p = 0.93$), but 2022 is significantly higher than both ($p < 0.001$).
+
+- We observed that data science salaries were essentially flat through 2020 and 2021. However, 2022 brought a massive, across-the-board surge in compensation, heavily reflecting the post-pandemic hiring boom and global inflation adjustments.
+
+```{r}
+ggplot(data, aes(x = factor(work_year), y = salary_in_usd)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6, outlier.color = "red") +
+  # Add a trend line connecting the means
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "darkorange", size = 1.2) +
+  stat_summary(fun = mean, geom = "point", color = "darkorange", size = 3) +
+  scale_y_continuous(labels = scales::dollar) +
+  theme_minimal() +
+  labs(
+    title = "Global Data Science Salaries Over Time",
+    subtitle = "The orange line tracks the mean salary, highlighting the 2022 surge",
+    x = "Work Year",
+    y = "Salary (USD)"
+  )
+```
