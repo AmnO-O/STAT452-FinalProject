@@ -1,6 +1,6 @@
-# Code Decisions — Activity 1, Task 01 (Data Preprocessing)
+# Code Decisions — Activity 1, Tasks 01 & 04
 
-**Owner:** Member A · **Source:** `src/activity1_salary_analysis.R` · **Last updated:** 2026-08-16
+**Owner:** Member A · **Source:** `src/activity1_salary_analysis.R`, `activity1/4. Continuous Regression.Rmd` · **Last updated:** 2026-08-24
 
 Every decision below is written into the code itself as a comment, so the script stays self-documenting. This file is the running "decisions log" (per `work_division.md`) that Members B & C must follow — never re-derive a decision separately.
 
@@ -47,3 +47,29 @@ Every decision below is written into the code itself as a comment, so the script
 - **Sparse interaction cells (reviewer note 3):** the script prints `table(job_category, experience_level)` — Other (n=15) and Research (n=16) crossed with 4 experience levels can give 0–2 obs per cell, which destabilizes the interaction. If cells are too sparse, lead with Experience × Company Size (3×4 = 12 cells) as the safer interaction.
 - **Multicollinearity (reviewer note 5):** the script prints `table(location_group, residence_group)` and the `is_local` share. If both dummy sets go into MLR/Ridge, expect inflated VIFs — consider dropping one set or using `is_local` instead.
 - Any change to this file must be agreed by the group and mirrored in `dataset/ds_salaries_clean.csv`.
+
+---
+
+## Task 04 Decisions — Continuous Regression (added 2026-08-24)
+
+Decisions made while building `activity1/4. Continuous Regression.Rmd`. Numbering continues from the Task 01 log; Members B & C must treat these as fixed inputs to Tasks 5–7.
+
+| # | Decision | Choice | Rationale (in our own words) |
+|---|---|---|---|
+| D14 | Train/test split design | **Year-aware seeded split**: all 287 records from 2020–2021 + 165 random 2022 records → train (452); remaining 113 2022 records → test; `set.seed(2026)` before the draw | Evaluation always targets the newest period, but a pure chronological holdout would leave a 49% test set — too far from the intended 80:20. Keeping ~3 of 5 2022 salaries in training preserves the ratio (refines D10: *year-aware* rather than strictly time-ordered). Rare categories (CT n=5, FL n=4) are verified present in training; the seed makes the partition exactly reproducible. |
+| D15 | Response scale for modeling | **ln(salary)** as working response, despite Box–Cox preferring λ̂ ≈ 0.30 (95% CI [0.26, 0.38] excludes both λ = 1 and λ = 0) | ln gives directly interpretable percentage coefficients. The likelihood's verdict is respected empirically: the power-transformed model gets the identical assumption battery and competes head-to-head out-of-sample in §4.5 — and it wins there, closing the loop with data rather than preference. |
+| D16 | Standardization boundary (amends D9) | **Train-only z-scores**: `_ts` columns computed from training means/SDs of raw codes, applied unchanged to test records | Penalized models require standardized inputs, but scaling on the full sample lets test information leak into fitting. The new `_ts` columns supersede the preprocessing `*_scaled` ones inside Task 4 only; results are numerically unchanged (glmnet standardizes internally anyway), but the procedure is now leakage-free. |
+| D17 | Model roster | **Seven candidates**: raw-response OLS, AIC-stepwise OLS, polynomial (quadratic experience) OLS, Ridge, LASSO, Elastic-net (CV-chosen α = 0.1), power-transform OLS | Covers interpretability (OLS/stepwise), flexibility (polynomial), regularization (penalty family), and the response-scale question (power). All seven score the same held-out set once — nothing measured on test records feeds back into fitting or tuning. |
+| D18 | Variable selection route | **Backward AIC stepwise** from the full 23-slope model (AIC 740 → 738; drops `remote_ratio` + `work_year`) plus a polynomial check (ANOVA F = 3.60, p = 0.028; RESET p = 0.12) | Stepwise gives a leaner interpretable model; the polynomial/RESET tests confirm mild curvature that the quadratic variant carries explicitly. df-adjusted GVIFs 1.03–1.21 confirm no collinearity obstacle after using single-location dummies (per reviewer note 5 / `is_local` advice). |
+| D19 | Inference under violated assumptions | **HC1 robust standard errors** alongside ordinary ones, computed on the final stepwise model | Breusch–Pagan rejects constant variance on every response scale tested, so plain SEs are untrustworthy. Robust errors leave conclusions essentially unchanged except medium company size (+16%, p = 0.052 ordinary → p = 0.125 robust) — reported as suggestive, not established. |
+| D20 | Ordinal vs dummy encoding | **Keep ordinal** encodings for experience/company size in penalized models | Re-encoding as full dummies changes CV RMSE by < 0.5% (0.5491 vs 0.5514), judged entirely by cross-validation **on the training data** — the comparison never touches the test set. Simpler encoding retained at no predictive cost. |
+| D21 | Retransformation to dollars | **Duan smearing factor** (mean of exponentiated *training* residuals) for all dollar predictions | Exponentiating log predictions returns medians, understating means. Smearing assumes homoskedastic residuals — an assumption we know fails — so dollar figures are documented approximations, valid for ranking models rather than exact forecasts. |
+| D22 | Task 4 output contract | `activity1/task04_model_comparison.csv` (7 rows: RMSE/R² in log points, MAE/RMSE in USD) is the **single source of truth** for model ranking | Member C's Task 6 must read this CSV instead of re-running models — same principle as D10. Winner recorded: power-transform OLS (test RMSE 0.416, MAE ≈ $43k); Ridge statistically indistinguishable behind it. |
+
+### Verification Summary (Task 04, printed by the Rmd)
+
+- Split sizes: train 452 · test 113 (all-2022 holdout), rare levels present in train
+- Full-model F = 29.11 on 23 and 428 df (adj R² = 0.589)
+- Box–Cox λ̂ = 0.30; best CV-RMSE scale ranking: power ≤ ridge < LASSO/enet < stepwise
+- glmnet matrices 452×20 / 113×20; LASSO retains 20 of 20 columns at λmin
+- CSV written with 7 model rows; rendered report embeds 7 figures
