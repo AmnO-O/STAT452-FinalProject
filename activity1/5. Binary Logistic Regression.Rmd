@@ -16,7 +16,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_knit$set(root.dir = "../")
+knitr::opts_knit$set(root.dir = ".")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
