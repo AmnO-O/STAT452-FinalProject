@@ -1,3 +1,8 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
 r---
 title: 'Activity 1 — Task 5: Binary Logistic Regression Modeling'
 author: "Group 08"
@@ -155,7 +160,54 @@ fit_summary <- tibble(
 knitr::kable(fit_summary, caption = "In-sample logistic-model fit summary")
 ```
 
-## 5.4 Interpretation and main findings
+To visualize the logistic regression curve for a model with multiple categorical predictors, we plot the predicted probabilities against the model's linear predictors (log-odds). This creates the characteristic "S-curve" of logistic regression.
+
+The actual observations (0 or 1) are jittered slightly on the y-axis to reduce overplotting and make the density of the data points visible.
+
+```{r predicted-probability-curve, fig.width=8, fig.height=5}
+# 1. Extract the linear predictors (log-odds) and fitted probabilities
+plot_data <- data %>%
+  mutate(
+    predicted_prob = predict(logit_model, type = "response"),
+    log_odds = predict(logit_model, type = "link")
+  )
+
+# 2. Plot the logistic curve and the actual observations
+ggplot(plot_data, aes(x = log_odds)) +
+  
+  # Scatter plot of actual observations (Y = 0 or 1)
+  # Jitter is added to the y-axis to match the visual style of the reference plot
+  geom_jitter(
+    aes(y = is_top_tier), 
+    width = 0, 
+    height = 0.02,
+    color = "orange", 
+    alpha = 0.3, 
+    size = 2
+  ) +
+  
+  # The S-curve representing the predicted probability
+  geom_line(
+    aes(y = predicted_prob), 
+    color = "blue", 
+    linewidth = 1.2
+  ) +
+  
+  # Formatting the plot
+  theme_minimal() +
+  labs(
+    title = "Predicted Probability Curve from the Model",
+    x = "Linear Predictor (Log-Odds)",
+    y = "Probability of Top-Tier Salary"
+  ) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+```
+
+## 5.4 Interpretation and main finding
 
 Interpret the printed table using the following comparison groups: entry-level
 (EN), small company (S), 0% remote work, Data Analyst, full-time employment,
