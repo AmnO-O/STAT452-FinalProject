@@ -1,9 +1,4 @@
 ---
-output:
-  html_document: default
-  pdf_document: default
----
-r---
 title: 'Activity 1 — Task 5: Binary Logistic Regression Modeling'
 author: "Group 08"
 date: "2026-08-21"
@@ -53,7 +48,10 @@ the cut-off are all retained in the top-tier class.
 q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
 
 data <- data %>%
-  mutate(is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L))
+  mutate(
+    row_id = row_number(),
+    is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L)
+  )
 
 target_summary <- data %>%
   count(is_top_tier, name = "n") %>%
@@ -72,7 +70,23 @@ The observed top-tier share can be slightly above 25% because several salaries
 may be tied at Q3. This is a consequence of applying the required `>=` rule,
 not a data-cleaning error.
 
-## 5.2 Predictor preparation and model fitting
+## 5.2 Training and testing partitions
+
+Task 4 uses a year-aware split, so this task keeps all 2020–2021 records in
+training and samples 165 records from 2022 for training. The remaining 113
+2022 records are held out for testing.
+
+```{r split-5-2}
+set.seed(2026)
+train_2022_ids <- sample(which(data$work_year == 2022), 165)
+train_ids <- c(which(data$work_year %in% c(2020, 2021)), train_2022_ids)
+train <- data[train_ids, ]
+test <- data[-train_ids, ]
+
+stopifnot(nrow(train) == 452, nrow(test) == 113, all(test$work_year == 2022))
+```
+
+## 5.3 Predictor preparation and model fitting
 
 Categorical predictors are converted to factors with explicit, meaningful
 reference levels. Thus, every odds ratio is interpreted relative to an
@@ -88,30 +102,54 @@ job-category grouping and all other factor definitions come directly from the
 Task 1 cleaned data.
 
 ```{r}
-data <- data %>%
-  mutate(
-    experience_level = factor(experience_level,
-                              levels = c("EN", "MI", "SE", "EX")),
-    company_size = factor(company_size, levels = c("S", "M", "L")),
-    remote_ratio = factor(remote_ratio, levels = c(0, 50, 100)),
-    job_category = relevel(factor(job_category), ref = "Data_Analyst"),
-    employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"),
-                              levels = c("FT", "Non_FT")),
-    company_location_group = factor(if_else(location_group == "US", "US", "Non_US"),
-                                    levels = c("Non_US", "US"))
+job_category_levels <- levels(
+  relevel(factor(data$job_category), ref = "Data_Analyst")
+)
+
+prepare_predictors <- function(df) {
+  dplyr::mutate(
+    df,
+      experience_level = factor(
+        df$experience_level,
+        levels = c("EN", "MI", "SE", "EX")
+      ),
+      company_size = factor(
+        df$company_size,
+        levels = c("S", "M", "L")
+      ),
+      remote_ratio = factor(
+        df$remote_ratio,
+        levels = c(0, 50, 100)
+      ),
+      job_category = factor(
+        df$job_category,
+        levels = job_category_levels
+      ),
+      employment_group = factor(
+        dplyr::if_else(df$employment_type == "FT", "FT", "Non_FT"),
+        levels = c("FT", "Non_FT")
+      ),
+      company_location_group = factor(
+        dplyr::if_else(df$location_group == "US", "US", "Non_US"),
+        levels = c("Non_US", "US")
+      )
   )
+}
+
+train <- prepare_predictors(train)
+test <- prepare_predictors(test)
 
 logit_model <- glm(
   is_top_tier ~ experience_level + company_size + remote_ratio +
     job_category + employment_group + company_location_group,
   family = binomial(link = "logit"),
-  data = data
+  data = train
 )
 
 summary(logit_model)
 ```
 
-## 5.3 Odds ratios and confidence intervals
+## 5.4 Odds ratios and confidence intervals
 
 For a coefficient $\beta$, `exp(beta)` is the odds ratio (OR), holding the
 other predictors constant. An OR above 1 indicates higher odds of top-tier
@@ -149,7 +187,7 @@ mcfadden_r2 <- 1 - logit_model$deviance / logit_model$null.deviance
 
 fit_summary <- tibble(
   observations = nobs(logit_model),
-  top_tier_cases = sum(data$is_top_tier),
+  top_tier_cases = sum(train$is_top_tier),
   null_deviance = logit_model$null.deviance,
   residual_deviance = logit_model$deviance,
   AIC = AIC(logit_model),
@@ -166,7 +204,7 @@ The actual observations (0 or 1) are jittered slightly on the y-axis to reduce o
 
 ```{r predicted-probability-curve, fig.width=8, fig.height=5}
 # 1. Extract the linear predictors (log-odds) and fitted probabilities
-plot_data <- data %>%
+plot_data <- train %>%
   mutate(
     predicted_prob = predict(logit_model, type = "response"),
     log_odds = predict(logit_model, type = "link")
@@ -207,24 +245,25 @@ ggplot(plot_data, aes(x = log_odds)) +
   )
 ```
 
-## 5.4 Interpretation and main finding
+The fitted model is applied to the held-out records below; these probabilities
+can be used by Task 6 to calculate classification metrics.
 
-Interpret the printed table using the following comparison groups: entry-level
-(EN), small company (S), 0% remote work, Data Analyst, full-time employment,
-and non-US company location. In this fitted model, the statistically
-significant positive associations are expected to include senior and executive
-experience, large company size, several technical or management job categories,
-and US company location. For example, an OR of about 12.7 for US location means
-that, after adjustment for the other included predictors, the estimated odds of
-being top-tier are about 12.7 times the odds for the non-US reference group.
+```{r test-predictions}
+test_predictions <- test %>%
+  mutate(
+    predicted_probability = predict(logit_model, newdata = test, type = "response"),
+    predicted_class = if_else(predicted_probability >= 0.5, 1L, 0L)
+  )
 
-The largest job-category OR should be interpreted as an adjusted association,
-not as a causal salary premium. Similarly, a non-significant coefficient does
-not prove that a characteristic has no effect; its confidence interval shows
-the range of effects compatible with this sample. The rare non-full-time group
-and the 50% remote-work group have wider intervals, so their estimates deserve
-particular caution.
+head(test_predictions[c("row_id", "is_top_tier", "predicted_probability", "predicted_class")])
+```
 
-The model’s AIC and McFadden pseudo-$R^2$ are descriptive in-sample summaries.
-Out-of-sample classification metrics, including ROC-AUC, are calculated in
-Task 6 before making any claim about predictive performance.
+## 5.5 Interpretation and main finding
+
+The odds-ratio table is estimated from the 452 training observations. Each odds ratio compares one category with its reference category while holding the other predictors constant. The reference profile is entry-level (EN), small-company (S), 0% remote work, Data Analyst, full-time employment, and a non-US company location. For example, an odds ratio of about 26.4 for US company location means that the estimated odds of being top-tier are 26.4 times those for a comparable non-US company, not that salary itself multiplies by this factor.
+
+Interpret the printed table using these comparison groups. In this fitted model, the statistically significant positive associations include senior and executive experience, large company size, several technical or management job categories, and US company location. Notably, the odds ratio for executive-level experience is extraordinarily high (over 253), although its wide confidence interval suggests some instability due to a small sample size in this specific sub-group. Other strong predictors include Senior level (OR $\approx$ 30.8) and ML/AI Engineer roles (OR $\approx$ 20.6) compared to entry-level Data Analysts.
+
+These are adjusted associations, not causal salary effects. The model contains no interaction terms, so each coefficient describes an average association under the model’s additive assumption. A non-significant coefficient does not prove that a characteristic has no effect; it simply indicates a lack of statistically significant evidence at the 5% level in this sample. Estimates for the non-full-time and 50% remote-work groups should be treated cautiously because their smaller sample sizes produce wider confidence intervals.
+
+The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the training data. The `test_predictions` object contains predictions for the 113 held-out records; classification metrics calculated from those predictions, including ROC-AUC, should be evaluated in Task 6 before making any claims about out-of-sample predictive performance.
