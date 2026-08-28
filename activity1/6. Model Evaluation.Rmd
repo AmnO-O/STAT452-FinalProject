@@ -3,7 +3,7 @@ title: "Activity 1 — Task 6: Model Evaluation & Comparison"
 author: "Group 08"
 date: "2026-08-20"
 output:
-  pdf_document:
+  html_document:
     latex_engine: xelatex
     toc: true
     toc_depth: 2
@@ -18,13 +18,93 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyverse)
+library(caret)
+library(pROC)
 data <- read.csv("dataset/ds_salaries_clean.csv")
+train <- read.csv("dataset/train_data.csv")
+test <- read.csv("dataset/test_data.csv")
 ```
 
 # 6 Model Evaluation & Comparison
 
-## 6.1 Regression models: RMSE, MAE, R^2
+```{r}
+prepare_logit_data <- function(df, q3_val) {
+  df %>%
+    mutate(
+      is_top_tier = if_else(salary_in_usd >= q3_val, 1L, 0L),
+      employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"), levels = c("FT", "Non_FT")),
+      company_location_group = factor(if_else(location_group == "US", "US", "Non_US"), levels = c("Non_US", "US"))
+    )
+}
+
+q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
+train_logit <- prepare_logit_data(train, q3_salary)
+test_logit <- prepare_logit_data(test, q3_salary)
+```
+
+## 6.1 Regression models: RMSE, MAE, R\^2
+
+We evaluate our continuous models based on out-of-sample Root Mean Squared Error (RMSE), Mean Absolute Error (MAE), and $R^2$.
+
+```{r}
+continuous_metrics <- read.csv("task04_model_comparison.csv")
+knitr::kable(continuous_metrics %>% arrange(RMSE_usd), 
+             caption = "Continuous Regression Models Ranked by USD RMSE")
+```
+
+Looking at the rankings table, the **Power-transformed OLS** model clearly took the lead. It achieved the lowest out-of-sample error (RMSE of roughly 43,108 USD) and the highest $R^2$ (0.402).
+
+- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.3) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a close second (RMSE of 44,758 USD), proving that shrinking the coefficients helped manage the noise from our dummy variables.
+
+- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error of 43,000 USD sounds large, but in a dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, capturing roughly 40% of that variance on unseen future data (the 2022 test set) is a very solid baseline.
 
 ## 6.2 Logistic model: Accuracy, Precision, Recall, F1-Score, ROC-AUC
 
+We now fit the logistic regression on the training set and evaluate its classification metrics on the 113 unseen records in the test set.
+
+```{r}
+logit_train <- glm(
+  is_top_tier ~ experience_level + company_size + remote_ratio +
+    job_category + employment_group + company_location_group,
+  family = binomial(link = "logit"),
+  data = train_logit
+)
+
+test_probs <- predict(logit_train, newdata = test_logit, type = "response")
+test_preds <- factor(ifelse(test_probs >= 0.5, 1, 0), levels = c(0, 1))
+actual_class <- factor(test_logit$is_top_tier, levels = c(0, 1))
+
+conf_matrix <- confusionMatrix(test_preds, actual_class, positive = "1")
+print(conf_matrix$table)
+
+roc_curve <- roc(test_logit$is_top_tier, test_probs)
+auc_value <- auc(roc_curve)
+
+cat("Accuracy:  ", round(conf_matrix$overall["Accuracy"], 3), "\n")
+cat("Precision: ", round(conf_matrix$byClass["Pos Pred Value"], 3), "\n")
+cat("Recall:    ", round(conf_matrix$byClass["Sensitivity"], 3), "\n")
+cat("F1-Score:  ", round(conf_matrix$byClass["F1"], 3), "\n")
+cat("ROC-AUC:   ", round(auc_value, 3), "\n")
+
+plot(roc_curve, col = "blue", lwd = 2, main = paste("ROC Curve (AUC =", round(auc_value, 3), ")"))
+```
+
+Our logistic regression achieved an overall **Accuracy of 66.4%**. However, because our target is the top 25% of earners, the dataset is imbalanced, making Accuracy a slightly misleading metric. To get the true picture, we must look at Precision and Recall.
+
+- **Precision (0.488) & Recall (0.541):** Out of all the people the model *guessed* were top-tier, it was right about 49% of the time. Meanwhile, it successfully caught 54% of the *actual* top-tier earners in the test set.
+
+- **The F1-Score (0.513):** This balances Precision and Recall. A score of \~0.51 indicates that the model struggles slightly with the gray area between "high mid-level" and "entry top-tier" salaries, which makes sense given how overlapping the pay bands are.
+
+- **ROC-AUC (0.712):** This is our most important metric. An AUC of 0.712 means that if we randomly pick one actual top-tier earner and one standard earner, our model has a 71.2% chance of correctly ranking the high-earner above the standard one.
+
+- **Practical Reality:** The model isn't a perfect crystal ball, but it is highly effective at separating the extremes. It proves that attributes like US location, executive experience, and specific job titles genuinely stack the odds in favor of hitting that top 25% tax bracket.
+
 ## 6.3 Best model selection and justification
+
+**1. Best Continuous Model: Power-Transformed OLS**
+
+We select the Box-Cox Power-Transformed model. By mathematically finding the optimal middle ground between raw dollars and a harsh log transformation, it achieved the lowest out-of-sample prediction error (RMSE 43,108 USD) and outperformed complex penalized models like LASSO and Elastic-Net. It proves that choosing the correct response scale is often more powerful than aggressively shrinking predictors.
+
+**2. Best Classification Model: Binary Logistic Regression**
+
+With an ROC-AUC of 0.712, this model successfully proved its ability to discriminate between standard and top-tier earners on unseen data. While predicting exact human salaries is difficult, this model provides a statistically sound, interpretable roadmap of exactly which career choices (location, role, seniority) maximize a data scientist's probability of breaking into the top 25% of global earners.
