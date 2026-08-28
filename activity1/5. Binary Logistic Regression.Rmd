@@ -1,9 +1,4 @@
 ---
-output:
-  html_document: default
-  pdf_document: default
----
-r---
 title: 'Activity 1 — Task 5: Binary Logistic Regression Modeling'
 author: "Group 08"
 date: "2026-08-21"
