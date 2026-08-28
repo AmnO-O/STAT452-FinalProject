@@ -3,7 +3,7 @@ title: "Activity 1 — Task 3: Inferential Statistics & Factorial ANOVA"
 author: "Group 08"
 date: "2026-08-18"
 output:
-  pdf_document:
+  html_document:
     latex_engine: xelatex
     toc: true
     toc_depth: 2
@@ -25,6 +25,7 @@ library(tidyverse)
 library(car)
 library(emmeans)
 library(ggplot2)
+library(lmtest)
 
 data <- read.csv("dataset/ds_salaries_clean.csv")
 data$experience_level <- factor(data$experience_level, levels = c("EN", "MI", "SE", "EX"))
@@ -52,6 +53,21 @@ car::Anova(anova_model, type = 3)
 
 - At first glance, our results show that experience is the biggest driver of compensation. The significant interaction suggests that the pay bump you get for being promoted might look very different depending on whether you work for a small startup or a massive corporation.
 
+```{r}
+ggplot(data, aes(x = experience_level, y = log_salary, 
+                 group = company_size, color = company_size)) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun = mean, geom = "line", linewidth = 1.2) +
+  theme_minimal() +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = "Interaction Plot: Salary by Experience and Company Size",
+       x = "Experience Level",
+       y = "Mean of ln(Salary)",
+       color = "Company Size")
+```
+
+Looking at the chart, the lines representing different company sizes clearly cross each other—most noticeably between the Entry-level (EN) and Mid-level (MI) stages. This visually illustrates exactly why our initial ANOVA flagged the interaction as significant. The model is seeing these crossing paths and interpreting them as a complex relationship.
+
 ### 3.2 Assumption Checking
 
 The validity of the standard ANOVA F-tests relies on two primary assumptions regarding the residuals: normality and equal variance (homoscedasticity).
@@ -62,15 +78,34 @@ shapiro.test(residuals(anova_model))
 
 # Assumption 2: Homogeneity of Variance
 leveneTest(log_salary ~ experience_level * company_size, data = data)
+bptest(anova_model)
+
+# Assumption 3: Independence of Residuals
+durbinWatsonTest(anova_model)
 ```
 
 **Diagnostic Interpretation:**
 
 - **Normality (**$p = 2.106 \times 10^{-13}$): The Shapiro-Wilk test fails. Even after the log-transformation applied in Task 1, the residuals have heavy tails.
 
-- **Homoscedasticity (**$p = 3.630 \times 10^{-6}$): Levene's test fails. The variance in salary is not equal across the grid; for example, Executive salaries in Large companies have a much wider spread than Entry-level salaries in Small companies.
+- **Homoscedasticity (**$p = 3.630 \times 10^{-6}$): Both Levene's test ($p = 3.630 \times 10^{-6}$) and the Breusch-Pagan test ($p \approx 0.0005$) fail. The variance in salary is not equal across the grid; for example, Executive salaries in Large companies have a much wider spread than Entry-level salaries in Small companies.
+
+- **Independence (**$p = 0.032$): The Durbin-Watson statistic is $1.81$. While it sits fairly close to the ideal score of $2$, the $p$-value points to a mild correlation among the residuals. Since our dataset is a cross-sectional snapshot of different people rather than a time sequence, this slight correlation isn't a major roadblock, but it's worth noting.
 
 - We noticed that salaries in this field are messy—executive pay ranges wildly, while entry-level pay is tightly clustered. Because the "spread" isn't equal across groups, we cannot fully trust the strict mathematical results from our first test and need to apply a correction.
+
+```{r}
+summary_stats <- data %>%
+  group_by(experience_level, company_size) %>%
+  summarise(
+    Count = n(),
+    Mean_Salary = mean(salary_in_usd),
+    SD_Salary = sd(salary_in_usd), # Standard Deviation shows the spread
+    .groups = "drop"
+  )
+
+print(summary_stats)
+```
 
 ```{r}
 ggplot(data, aes(x = experience_level, y = salary_in_usd, fill = experience_level)) +
@@ -88,7 +123,7 @@ ggplot(data, aes(x = experience_level, y = salary_in_usd, fill = experience_leve
 
 ### 3.3 Remedies for Assumption Violations
 
-Because the data violates both standard assumptions, the traditional ANOVA $p$-values may be unstable. To ensure our findings are robust, we implement a **Heteroscedasticity-Consistent (HC) Robust ANOVA**. This technique adjusts the standard errors to account for the unequal variances without requiring data deletion.
+Because the data violates standard assumptions, the traditional ANOVA $p$-values may be unstable. To ensure our findings are robust, we implement a **Heteroscedasticity-Consistent (HC) Robust ANOVA**. This technique adjusts the standard errors to account for the unequal variances without requiring data deletion.
 
 ```{r}
 car::Anova(anova_model, type = 3, white.adjust = TRUE)

@@ -1,0 +1,534 @@
+---
+title: 'Activity 2 — Task 1: Data Preprocessing'
+author: "Group 08"
+date: "2026-08-28"
+output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = ".")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# 1 Data Preprocessing
+
+## 1.1 Dataset Description
+
+The dataset used in this analysis is derived from the Open Sourcing Mental Illness (OSMI) survey spanning five consecutive years (2018–2022). The survey aims to measure attitudes towards mental health in the technology workplace.
+
+To ensure statistical reliability and focus on our specific research questions, we extracted the following core variables from all five datasets.
+
+### Target Variables
+
+- **Treatment**: whether the employee sought professional treatment for a mental health condition.
+- **Employer_Mental_Importance**: the importance placed on mental health by the employer, measured on a numerical scale.
+
+### Predictor Variables
+
+- **Demographics**: Age, Gender, Family_History
+- **Corporate environment factors**:
+  - Tech_Company
+  - Employer_Phys_Importance
+  - Coworker_Reaction_Score
+  - Industry_Support_Rating
+
+The survey structure changes slightly between years, so the preprocessing procedure uses column-name matching rather than relying on fixed column positions.
+
+## 1.2 Data Integration
+
+A helper function is used to extract the required variables from each yearly dataset. Regular expressions are used to identify columns because column names are not necessarily identical across survey years.
+
+```{r libraries}
+library(tidyverse)
+library(scales)
+```
+
+```{r data-integration}
+load_osmi <- function(file_path, year) {
+
+  df <- read.csv(
+    file_path,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+
+  get_col <- function(pattern, required = TRUE) {
+
+    matched <- grep(
+      pattern,
+      names(df),
+      value = TRUE,
+      ignore.case = TRUE
+    )
+
+    if (length(matched) == 0) {
+
+      if (required) {
+        stop(
+          paste0(
+            "Column not found for pattern: ",
+            pattern,
+            "\nFile: ",
+            file_path
+          )
+        )
+      } else {
+        return(NULL)
+      }
+    }
+
+    matched[1]
+  }
+
+  tibble(
+    Age = suppressWarnings(
+      as.numeric(df[[get_col("^what is your age|\\bage\\b")]])
+    ),
+
+    Gender = as.character(
+      df[[get_col("what is your gender|^gender")]]
+    ),
+
+    Treatment = df[[
+      get_col("sought treatment for a mental health")
+    ]],
+
+    Tech_Company = df[[
+      get_col("primarily a tech company")
+    ]],
+
+    Employer_Phys_Importance = suppressWarnings(
+      as.numeric(
+        df[[
+          get_col(
+            "importance does your employer place on physical"
+          )
+        ]]
+      )
+    ),
+
+    Employer_Mental_Importance = suppressWarnings(
+      as.numeric(
+        df[[
+          get_col(
+            "importance does your employer place on mental"
+          )
+        ]]
+      )
+    ),
+
+    Coworker_Reaction_Score = suppressWarnings(
+      as.numeric(
+        df[[
+          get_col(
+            "team members/co-workers would react|co-workers would react"
+          )
+        ]]
+      )
+    ),
+
+    Industry_Support_Rating = suppressWarnings(
+      as.numeric(
+        df[[
+          get_col(
+            "tech industry supports employees"
+          )
+        ]]
+      )
+    ),
+
+    Family_History = as.character(
+      df[[
+        get_col("family history of mental")
+      ]]
+    ),
+
+    Year = as.integer(year)
+  )
+}
+
+data <- bind_rows(
+
+  load_osmi(
+    "dataset/OSMI_Mental_Health_In_Teach_Industry_2018.csv",
+    2018
+  ),
+
+  load_osmi(
+    "dataset/OSMI_Mental_Health_In_Teach_Industry_2019.csv",
+    2019
+  ),
+
+  load_osmi(
+    "dataset/OSMI_Mental_Health_In_Teach_Industry_2020.csv",
+    2020
+  ),
+
+  load_osmi(
+    "dataset/OSMI_Mental_Health_In_Teach_Industry_2021.csv",
+    2021
+  ),
+
+  load_osmi(
+    "dataset/OSMI_Mental_Health_In_Teach_Industry_2022.csv",
+    2022
+  )
+)
+
+cat(
+  "Initial combined rows:",
+  nrow(data),
+  "\n"
+)
+```
+
+## 1.3 Handle Missing Values
+
+First, we inspect the number of missing values in each variable.
+
+```{r missing-values}
+missing_values <- colSums(is.na(data))
+
+print(missing_values)
+```
+
+The three corporate-specific variables (`Employer_Mental_Importance`, `Employer_Phys_Importance`, and `Tech_Company`) are required for the corporate workplace analysis.
+
+Freelancers and self-employed respondents may legitimately have missing values for these questions because they are not applicable to their employment situation. Therefore, rows with missing values in these three variables are removed.
+
+Missing values in other independent variables, such as `Gender`, are initially retained in order to avoid unnecessarily reducing the sample size.
+
+```{r remove-missing-corporate}
+data <- data %>%
+  drop_na(
+    Employer_Mental_Importance,
+    Employer_Phys_Importance,
+    Tech_Company
+  )
+
+cat(
+  "Rows after removing rows with missing corporate variables:",
+  nrow(data),
+  "\n"
+)
+```
+
+## 1.4 Remove Duplicate Records
+
+Duplicate observations are identified before removing them.
+
+```{r duplicates}
+duplicate_rows <- data[duplicated(data), ]
+
+cat(
+  "Number of duplicate rows:",
+  nrow(duplicate_rows),
+  "\n"
+)
+```
+
+Duplicate observations are then removed using `distinct()`.
+
+```{r remove-duplicates}
+data <- data %>%
+  distinct()
+
+cat(
+  "Rows after removing duplicates:",
+  nrow(data),
+  "\n"
+)
+```
+
+## 1.5 Detect and Handle Outliers in Age
+
+Age is examined using a boxplot to identify potentially invalid observations.
+
+```{r age-boxplot, fig.width=7, fig.height=4}
+ggplot(
+  data,
+  aes(x = "", y = Age)
+) +
+  geom_boxplot(
+    fill = "skyblue",
+    outlier.color = "red",
+    outlier.shape = 16
+  ) +
+  theme_minimal() +
+  labs(
+    title = "Detecting Outliers in Age",
+    x = "",
+    y = "Age"
+  )
+```
+
+### Age Validation
+
+Unlike variables such as income or salary, extremely large or extremely small age values are not realistic for a working population.
+
+Therefore, we restrict the dataset to respondents between **18 and 65 years old**.
+
+```{r filter-age}
+data <- data %>%
+  filter(
+    !is.na(Age),
+    Age >= 18,
+    Age <= 65
+  )
+
+cat(
+  "Rows after filtering valid working age:",
+  nrow(data),
+  "\n"
+)
+```
+
+## 1.6 Normalize and Encode Categorical Variables
+
+### Gender Normalization
+
+Gender responses were collected using free-text input, which resulted in multiple representations of the same category.
+
+We normalize the text by trimming whitespace and converting values to lowercase before mapping them into three broad categories: **Female**, **Male**, and **Other**.
+
+```{r gender-normalization}
+data <- data %>%
+  mutate(
+    Gender = str_trim(
+      str_to_lower(Gender)
+    ),
+
+    Gender_Category = case_when(
+
+      str_detect(
+        Gender,
+        "^(f|female|woman|cis female|femmina)"
+      ) ~ "Female",
+
+      str_detect(
+        Gender,
+        "^(m|male|man|cis male|dude|masculin)"
+      ) ~ "Male",
+
+      TRUE ~ "Other"
+    )
+  )
+
+print(
+  table(
+    data$Gender_Category,
+    useNA = "ifany"
+  )
+)
+```
+
+The normalization ensures that missing or unusual responses are assigned to the `Other` category rather than creating many small categories.
+
+### Binary Encoding
+
+The `Treatment` and `Tech_Company` variables are converted into binary categorical variables.
+
+```{r binary-encoding}
+data <- data %>%
+  mutate(
+
+    Treatment_Cat = case_when(
+      Treatment == 1 ~ "Yes",
+      str_detect(
+        str_to_lower(as.character(Treatment)),
+        "^yes$"
+      ) ~ "Yes",
+      TRUE ~ "No"
+    ),
+
+    Tech_Company_Cat = case_when(
+      Tech_Company == 1 ~ "Yes",
+      str_detect(
+        str_to_lower(as.character(Tech_Company)),
+        "^yes$"
+      ) ~ "Yes",
+      TRUE ~ "No"
+    )
+  )
+```
+
+### One-Hot Encoding
+
+Nominal categorical variables are encoded using dummy variables.
+
+For interpretation, the reference categories are explicitly defined as:
+
+- **Male** for gender
+- **No** for family history
+
+```{r one-hot-function}
+one_hot <- function(
+  df,
+  col,
+  prefix,
+  ref_level
+) {
+
+  f <- factor(
+    df[[col]]
+  )
+
+  f <- relevel(
+    f,
+    ref = ref_level
+  )
+
+  mm <- model.matrix(
+    ~ f,
+    data = data.frame(f = f)
+  )
+
+  mm <- as.data.frame(
+    mm[, -1, drop = FALSE]
+  )
+
+  if (ncol(mm) > 0) {
+
+    colnames(mm) <- paste0(
+      prefix,
+      gsub(
+        "[^[:alnum:]]",
+        "_",
+        levels(f)[-1]
+      )
+    )
+  }
+
+  mm
+}
+```
+
+The dummy variables are then added to the dataset.
+
+```{r create-one-hot}
+gender_dummy <- one_hot(
+  data,
+  "Gender_Category",
+  "gender_",
+  "Male"
+)
+
+family_dummy <- one_hot(
+  data,
+  "Family_History",
+  "fam_hist_",
+  "No"
+)
+
+data <- bind_cols(
+  data,
+  gender_dummy,
+  family_dummy
+)
+```
+
+The target variables and binary categorical variables are explicitly converted to factors, with `No` as the reference category.
+
+```{r factor-encoding}
+data$Treatment_Cat <- factor(
+  data$Treatment_Cat,
+  levels = c("No", "Yes")
+)
+
+data$Tech_Company_Cat <- factor(
+  data$Tech_Company_Cat,
+  levels = c("No", "Yes")
+)
+
+data$Year <- factor(data$Year)
+```
+
+## 1.7 Scale Numerical Features
+
+Numerical predictor variables are standardized using Z-score normalization:
+
+\[
+Z = \frac{X - \mu}{\sigma}
+\]
+
+The original variables are preserved so that regression coefficients based on the original scale remain interpretable.
+
+```{r scaling}
+data$Age_scaled <- as.numeric(
+  scale(data$Age)
+)
+
+data$Employer_Phys_scaled <- as.numeric(
+  scale(data$Employer_Phys_Importance)
+)
+
+data$Employer_Mental_scaled <- as.numeric(
+  scale(data$Employer_Mental_Importance)
+)
+
+data$Coworker_Reaction_scaled <- as.numeric(
+  scale(data$Coworker_Reaction_Score)
+)
+```
+
+## 1.8 Final Verification and Export
+
+The final dataset is checked for the number of observations and the distribution of gender and treatment.
+
+```{r final-verification}
+cat(
+  "Final Rows:",
+  nrow(data),
+  "\n"
+)
+
+cat(
+  "Final Columns:",
+  ncol(data),
+  "\n"
+)
+
+print(
+  table(
+    data$Gender_Category,
+    data$Treatment_Cat,
+    useNA = "ifany"
+  )
+)
+```
+
+A summary of the final dataset can also be inspected.
+
+```{r final-summary}
+str(data)
+
+summary(data)
+```
+
+Finally, the cleaned dataset is exported as a CSV file for subsequent statistical analysis.
+
+```{r export}
+write.csv(
+  data,
+  "dataset/osmi_clean_combined.csv",
+  row.names = FALSE
+)
+
+cat(
+  "Cleaned dataset exported successfully.\n"
+)
+```
