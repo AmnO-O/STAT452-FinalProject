@@ -638,3 +638,9 @@ so none of the candidates is badly over-parameterized in sample. In short,
 on the training data the candidate models are nearly indistinguishable in
 fit; their separation must come from held-out performance, which Task 6
 evaluates.
+
+```{r}
+write.csv(train, "dataset/train_data.csv", row.names = FALSE)
+write.csv(test, "dataset/test_data.csv", row.names = FALSE)
+```
+
