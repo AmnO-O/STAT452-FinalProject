@@ -1,0 +1,133 @@
+---
+title: 'Activity 2 — Task 3: Factorial ANOVA'
+author: "Group 08"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = ".")
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 3 Inferential Statistics: Factorial ANOVA
+
+## 3.1 Research Question and Hypotheses
+
+This task addresses the first research question for Activity 2: **Does the rating of employer mental health concern (`Employer_Mental_Importance`) differ significantly between Male and Female employees, and does this difference vary depending on whether they work in a tech company or a non-tech company?**
+
+To answer this, we formulate a Two-Way Factorial ANOVA with the following null hypotheses:
+
+- **Main Effect A (Gender):** $H_0$: There is no difference in perceived mental health importance between Male and Female employees.
+
+- **Main Effect B (Sector):** $H_0$: There is no difference in perceived mental health importance between tech and non-tech companies.
+
+- **Interaction Effect:** $H_0$: The effect of gender on mental health importance ratings is consistent across both tech and non-tech companies (no interaction).
+
+## 3.2 Data Preparation and Visualization
+
+Because the research question strictly asks to compare "Men and Women", we filter the dataset to include only these two explicit gender categories. This creates a clean $2 \times 2$ factorial design.
+
+```{r}
+library(tidyverse)
+library(car)
+library(knitr)
+
+# Load data and filter strictly for Male and Female
+data <- read.csv("dataset/osmi_clean_combined.csv") %>%
+  filter(Gender_Category %in% c("Female", "Male")) %>%
+  mutate(
+    Gender_Category = factor(Gender_Category, levels = c("Male", "Female")),
+    Tech_Company_Cat = factor(Tech_Company_Cat, levels = c("No", "Yes"))
+  )
+
+cat("Sample size for ANOVA:", nrow(data), "observations\n")
+
+# Calculate means for the interaction plot
+interaction_data <- data %>%
+  group_by(Gender_Category, Tech_Company_Cat) %>%
+  summarise(Mean_Importance = mean(Employer_Mental_Importance, na.rm = TRUE), .groups = 'drop')
+
+kable(interaction_data, digits = 2, caption = "Mean Employer Mental Importance by Group")
+
+# Interaction Plot
+ggplot(interaction_data, aes(x = Tech_Company_Cat, y = Mean_Importance, 
+                             color = Gender_Category, group = Gender_Category)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 4) +
+  scale_color_manual(values = c("Male" = "steelblue", "Female" = "firebrick")) +
+  theme_minimal() +
+  labs(
+    title = "Interaction Plot: Mental Health Importance by Gender and Sector",
+    x = "Is it a Tech Company?",
+    y = "Mean Employer Mental Importance (0-10)",
+    color = "Gender"
+  ) +
+  theme(plot.title = element_text(face = "bold", size = 14))
+```
+
+Visually, the interaction plot shows that tech companies score slightly higher on average than non-tech companies for both genders. Females appear to rate tech companies slightly higher than males do. However, the lines are nearly parallel, suggesting that a significant interaction effect is unlikely.
+
+## 3.3 Assumption Testing
+
+Before interpreting the ANOVA $F$-tests, we must check the assumptions of normality and equal variances (homoscedasticity). Since the design is unbalanced (we have more males than females, and more tech companies than non-tech), we must use **Type III Sums of Squares** and set orthogonal contrasts.
+
+```{r}
+# Set orthogonal contrasts for Type III ANOVA
+options(contrasts = c("contr.sum", "contr.poly"))
+
+# Fit the linear model
+anova_model <- lm(Employer_Mental_Importance ~ Gender_Category * Tech_Company_Cat, data = data)
+
+# 1. Normality Test (Shapiro-Wilk)
+# Because N > 5000 is not allowed in Shapiro-Wilk, we are safe here with N=989.
+shapiro_res <- shapiro.test(resid(anova_model))
+
+# 2. Homoscedasticity Test (Levene's Test)
+levene_res <- car::leveneTest(Employer_Mental_Importance ~ Gender_Category * Tech_Company_Cat, data = data)
+
+cat("Shapiro-Wilk Test for Normality:\n")
+cat("W =", round(shapiro_res$statistic, 3), ", p-value =", signif(shapiro_res$p.value, 3), "\n\n")
+cat("Levene's Test for Homoscedasticity:\n")
+cat("F =", round(levene_res$`F value`[1], 3), ", p-value =", round(levene_res$`Pr(>F)`[1], 3), "\n")
+```
+
+- **Normality fails (**$p < 0.001$): As is extremely common with human survey data bounded on a 0-10 scale, the residuals are not perfectly normally distributed.
+
+- **Homoscedasticity passes brilliantly (**$p = 0.992$): Unlike the salary data in Activity 1, the variance in survey responses is incredibly stable and equal across all four groups.
+
+**Remedy Decision:** Because the variances are strictly equal (Levene's test passes) and the sample size is large ($N = 989$), the Central Limit Theorem ensures that the standard $F$-test is highly robust against violations of normality. We can confidently proceed with the standard Type III ANOVA without needing a heteroscedasticity correction.
+
+## 3.4 ANOVA Results and Interpretation
+
+```{r}
+# Type III ANOVA
+anova_results <- car::Anova(anova_model, type = 3)
+print(anova_results)
+```
+
+### 3.4.1 Main Findings
+
+Based on the Type III ANOVA table, we conclude the following:
+
+- **No Interaction Effect (**$p = 0.695$): The interaction between gender and the tech sector is not statistically significant. The slight widening of the gap seen in the interaction plot is purely due to random sample noise. The way men and women perceive their company's mental health support does not fundamentally change whether they are inside or outside the tech sector.
+
+<!-- -->
+
+- **No Significant Gender Difference (**$p = 0.474$): The main effect of gender is entirely non-significant. Male and Female employees perceive their employers' prioritization of mental health almost identically.
+
+- **Significant Sector Difference (**$p = 0.0275$): The main effect of the company sector is statistically significant at the 5% alpha level. Employees in tech companies rate their employers' mental health support significantly higher (means $\approx$ 5.1 - 5.3) than employees in non-tech companies (means $\approx$ 4.7 - 4.8).
+
+**Conclusion:**
+
+Employees across the board rate their employers' focus on mental health at a relatively mediocre midpoint (around 5 out of 10). However, the technology sector is performing significantly better than traditional, non-tech industries in the eyes of their workers. Strikingly, this perception is universal across genders—male and female employees experience and report this exact same trend without bias.
