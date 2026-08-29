@@ -21,6 +21,16 @@ knitr::opts_chunk$set(echo = TRUE)
 We start by loading the raw dataset `ds_salaries.csv` (607 observations, 11
 variables) and inspecting its structure.
 
+Two currency-related columns are present: `salary` (gross pay in the *original*
+currency, e.g. EUR, GBP, INR) and `salary_currency` (the ISO 4217 code for
+that column). Salary is reported in many currencies, which are not directly
+comparable; the dataset also supplies `salary_in_usd`, the same value already
+converted to US dollars at the collection-time exchange rate. We therefore use
+**`salary_in_usd` as the single response** throughout and do not model
+`salary`/`salary_currency` themselves — they carry no additional predictive
+information beyond the USD value and would only introduce non-comparable,
+multi-currency redundancy.
+
 ```{r}
 library(tidyverse)
 data <- read.csv("dataset/ds_salaries.csv")
@@ -65,6 +75,8 @@ print(nrow(duplicate_rows)) ### 42 dupplicated rows
 ```{r}
 data <- data %>% distinct()
 cat("Rows after removing duplicates:", nrow(data), "\n") ### 607 -> 565
+stopifnot(nrow(data) == 565, sum(duplicated(data)) == 0)
+stopifnot(sum(is.na(data)) == 0, sum(data == "") == 0)
 ```
 
 42 rows are exact duplicates of other rows. We keep the first occurrence of
@@ -109,8 +121,9 @@ lower bound.
 data$log_salary <- log(data$salary_in_usd) ### natural logarithm (ln)
 ```
 
-We **keep all 10 rows**. They are legitimate executive/director salaries
-(EX/SE level, mostly US employers), not data-entry errors. Removing ~1.6% of an
+We **keep all 10 rows**. They are the top earners of the sample — high earners
+across the seniority spectrum (Executive 4, Senior 3, Mid-level 3), all with
+US-based employers — not data-entry errors. Removing ~1.8% of an
 already small sample (565) would bias group means and group sizes, and
 winsorization would fabricate values. Instead, the skewness is handled at the
 model level by adding `log_salary = ln(salary_in_usd)`, which later tasks use
@@ -142,18 +155,21 @@ decision.
 ## 1.5 Group granular job titles into major categories
 
 The dataset has 52 distinct job titles, too sparse for modeling. We group them
-into **7 major categories** using priority-ordered keyword matching.
-Management titles contain words like "Data Science" (e.g., "Head of Data
-Science"), so they must be matched **first**; `Research Scientist` must be
-matched before the generic `Scientist` pattern.
+into **7 major categories** using priority-ordered keyword matching. Management
+titles contain words like "Data Science" (e.g., "Head of Data Science"), so
+they must be matched **first**. Explicit `Research Scientist` titles are
+matched next, *before* the generic ML/AI pattern, because a title like
+"Research Scientist" also contains the substrings `Scientist` (and sometimes
+`ML`/`AI`); ordering it first guarantees research roles land in the `Research`
+bucket rather than being absorbed by the later, broader patterns.
 
 ```{r}
 data <- data %>%
   mutate(job_category = case_when(
     grepl("Director|Head|Manager|Lead", job_title, ignore.case = TRUE) ~ "Management_Lead",
+    grepl("Research Scientist", job_title, ignore.case = TRUE) ~ "Research",
     grepl("Machine Learning|ML Engineer|ML Scientist|AI|Computer Vision|NLP|Deep Learning|Researcher",
           job_title, ignore.case = TRUE) ~ "ML_AI_Engineer",
-    grepl("Research Scientist", job_title, ignore.case = TRUE) ~ "Research",
     grepl("Data Engineer|Big Data|ETL|Cloud Data|Data Architect|Data Specialist|Data Science Engineer",
           job_title, ignore.case = TRUE) ~ "Data_Engineer",
     grepl("Data Scientist|Scientist", job_title, ignore.case = TRUE) ~ "Data_Scientist",
@@ -178,6 +194,15 @@ and no title is left unmapped.
 as ordinal integers. The raw character columns are kept alongside for the
 Factorial ANOVA in Task 3.
 
+> **Caveat on ordinal coding:** assigning equally-spaced integers (1–4 / 1–3)
+> *imposes* equal spacing between adjacent levels. That assumption is
+> convenient for the penalized regression models in Task 4 (which need
+> scale-invariant numeric inputs), but it may not reflect true salary gaps.
+> Task 4 therefore re-checks this encoding against a full factor-dummy
+> alternative and confirms it "costs nothing predictive" (CV RMSE 0.5491 vs
+> 0.5514). The interpretable models (ANOVA in Task 3, MLR in Task 4) always
+> use the *factors*, never these ordinals.
+
 ```{r}
 data <- data %>%
   mutate(exp_level_ord = case_when(
@@ -193,6 +218,11 @@ data <- data %>%
     company_size == "M" ~ 2L,
     company_size == "L" ~ 3L
   ))
+
+## Guard against unseen levels: case_when silently yields NA for any level not
+## listed above, so assert that every row received a code.
+stopifnot(!anyNA(data$exp_level_ord), !anyNA(data$company_size_ord))
+stopifnot(all(data$exp_level_ord %in% 1:4), all(data$company_size_ord %in% 1:3))
 ```
 
 ### One-hot encoding with explicit reference levels
@@ -295,8 +325,9 @@ data_dictionary <- data.frame(
   Type = c("numeric", "character", "character", "character", "numeric",
            "character", "numeric", "character", "numeric", "character",
            "character", "numeric", "factor", "ordinal (1-4)", "ordinal (1-3)",
-           "factor", "factor", "binary (0/1)", "one-hot (6)", "one-hot (3)",
-           "one-hot (7)", "one-hot (7)", "z-score"),
+           "factor", "factor", "binary (0/1)", "one-hot (6 of 7 levels)",
+           "one-hot (3 of 4 levels)", "one-hot (7 of 8 levels)",
+           "one-hot (7 of 8 levels)", "z-score"),
   Meaning = c("Year the salary was paid", "Experience level (EN/MI/SE/EX)",
               "Employment type (PT/FT/CT/FL)", "Original granular job title",
               "Gross salary in original currency", "ISO 4217 currency code",
@@ -304,12 +335,13 @@ data_dictionary <- data.frame(
               "Remote work ratio (0/50/100)", "Employer's country",
               "Company size (S/M/L)", "ln(salary_in_usd) for modeling",
               "Grouped job category (7 levels)", "Ordinal encoding of experience",
-              "Ordinal encoding of company size", "Top-7 countries + Other",
-              "Top-7 countries + Other (residence)",
+              "Ordinal encoding of company size", "Top-7 countries + Other (8 levels)",
+              "Top-7 countries + Other (8 levels)",
               "1 if company_location == employee_residence",
-              "Dummies of job_category (ref: Data_Analyst)",
-              "Dummies of employment_type (ref: FT)", "Dummies of location_group (ref: Other)",
-              "Dummies of residence_group (ref: Other)", "Standardized numeric features")
+              "6 dummies of job_category (ref: Data_Analyst)",
+              "3 dummies of employment_type (ref: FT)",
+              "7 dummies of location_group (ref: Other)",
+              "7 dummies of residence_group (ref: Other)", "Standardized numeric features")
 )
 print(data_dictionary)
 ```
