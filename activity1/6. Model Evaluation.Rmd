@@ -52,11 +52,11 @@ knitr::kable(continuous_metrics %>% arrange(RMSE_usd),
              caption = "Continuous Regression Models Ranked by USD RMSE")
 ```
 
-Looking at the rankings table, the **Power-transformed OLS** model clearly took the lead. It achieved the lowest out-of-sample error (RMSE of roughly 43,108 USD) and the highest $R^2$ (0.402).
+Looking at the rankings table, the **Power-transformed OLS** model clearly took the lead. It achieved the lowest out-of-sample error (RMSE of roughly 43,300 USD) and the highest out-of-sample $R^2$ (approximately 0.40).
 
-- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.3) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a close second (RMSE of 44,758 USD), proving that shrinking the coefficients helped manage the noise from our dummy variables.
+- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.3) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a very close second (trailing by only about 0.002 log-RMSE), proving that shrinking the coefficients helped manage the noise from our dummy variables.
 
-- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error of 43,000 USD sounds large, but in a dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, capturing roughly 40% of that variance on unseen future data (the 2022 test set) is a very solid baseline.
+- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error of roughly 43,300 USD sounds large, but in a dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, capturing roughly 40% of that variance on unseen future data (the 2022 test set) is a very solid baseline.
 
 ## 6.2 Logistic model: Accuracy, Precision, Recall, F1-Score, ROC-AUC
 
@@ -103,7 +103,7 @@ Our logistic regression achieved an overall **Accuracy of 66.4%**. However, beca
 
 **1. Best Continuous Model: Power-Transformed OLS**
 
-We select the Box-Cox Power-Transformed model. By mathematically finding the optimal middle ground between raw dollars and a harsh log transformation, it achieved the lowest out-of-sample prediction error (RMSE 43,108 USD) and outperformed complex penalized models like LASSO and Elastic-Net. It proves that choosing the correct response scale is often more powerful than aggressively shrinking predictors.
+We select the Box-Cox Power-Transformed model. By mathematically finding the optimal middle ground between raw dollars and a harsh log transformation, it achieved the lowest out-of-sample prediction error (RMSE roughly 43,300 USD) and outperformed complex penalized models like LASSO and Elastic-Net. It proves that choosing the correct response scale is often more powerful than aggressively shrinking predictors.
 
 **2. Best Classification Model: Binary Logistic Regression**
 
