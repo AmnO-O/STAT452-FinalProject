@@ -27,6 +27,11 @@ test <- read.csv("dataset/test_data.csv")
 
 # 6 Model Evaluation & Comparison
 
+All evaluation in this task uses the same seeded global random 80:20 split as
+Tasks 4 and 5. The 452 training records and 113 held-out records are sampled
+from the full cleaned dataset, so the comparison estimates global predictive
+performance rather than performance on a single future year.
+
 ```{r}
 prepare_logit_data <- function(df, q3_val) {
   df %>%
@@ -56,7 +61,7 @@ Looking at the rankings table, the **Power-transformed OLS** model clearly took 
 
 - The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.3) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a close second (RMSE of 44,758 USD), proving that shrinking the coefficients helped manage the noise from our dummy variables.
 
-- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error of 43,000 USD sounds large, but in a dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, capturing roughly 40% of that variance on unseen future data (the 2022 test set) is a very solid baseline.
+- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error around the low-to-mid 40,000 USD range sounds large, but in a global dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, explaining a meaningful share of the variance on held-out records is a solid baseline.
 
 ## 6.2 Logistic model: Accuracy, Precision, Recall, F1-Score, ROC-AUC
 
