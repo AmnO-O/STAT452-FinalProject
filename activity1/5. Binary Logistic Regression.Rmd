@@ -51,7 +51,7 @@ classified as top-tier when their salary is at least this cut-off. The use of
 the cut-off are all retained in the top-tier class.
 
 ```{r}
-q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
+q3_salary <- as.numeric(quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE))
 
 data <- data %>%
   mutate(
@@ -65,7 +65,7 @@ target_summary <- data %>%
     tier = if_else(is_top_tier == 1L, "Top tier (1)", "Below top tier (0)"),
     proportion = n / sum(n)
   ) %>%
-  select(tier, n, proportion)
+  dplyr::select(tier, n, proportion)
 
 cat("75th-percentile salary cut-off (Q3): $", format(q3_salary, big.mark = ","), "\n", sep = "")
 knitr::kable(target_summary, digits = 3,
@@ -94,19 +94,15 @@ used_cols <- c("salary_in_usd", "experience_level", "employment_type",
 stopifnot(nrow(data) == 565,
           sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
 
-train_old <- data %>% filter(work_year %in% c(2020, 2021))  # 287 older records
-pool_2022 <- data %>% filter(work_year == 2022)             # 278 recent records
-
 check_vars <- c("employment_type", "job_category", "location_group",
                 "experience_level", "company_size")
 
 repeat {
-  idx <- sample(nrow(pool_2022), 165)
-  tr22 <- pool_2022[idx, ]
-  te <- pool_2022[-idx, ]
-  tr <- bind_rows(train_old, tr22)
-  ok <- all(vapply(check_vars,
-                   function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
+  idx <- sample(nrow(data), floor(0.8 * nrow(data)))
+  tr  <- data[idx, ]
+  te  <- data[-idx, ]
+  ok  <- all(vapply(check_vars,
+                    function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
   if (ok) break
 }
 
@@ -398,6 +394,6 @@ These are adjusted associations observed in the training data, not causal salary
 
 ### 5.7.2 Train-Test Evaluation Framework
 
-The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the 452 training observations. To assess whether the model's learned associations generalize to new 2022 data, the fitted model is applied to the held-out test set (113 records from 2022). The training-test split strategy (Year-aware split) helps protect against over-optimistic performance claims and evaluates the model's ability to predict top-tier status for unobserved records from the most recent year in the data.
+The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the 452 training observations. To assess whether the model's learned associations generalize, the fitted model is applied to the held-out test set (113 records). The training-test split strategy (global random split) helps protect against over-optimistic performance claims and evaluates the model's ability to predict top-tier status for unobserved records across the entire dataset.
 
 The test-set predictions and their corresponding classification metrics are computed in the section above. These out-of-sample evaluations, including accuracy, sensitivity, specificity, ROC-AUC, and other performance measures, will be calculated and compared to in-sample training performance in Task 6 to determine whether the model generalizes or exhibits overfitting.
