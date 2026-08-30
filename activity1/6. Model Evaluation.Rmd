@@ -1,7 +1,6 @@
 ---
 title: "Activity 1 — Task 6: Model Evaluation & Comparison"
 author: "Group 08"
-date: "2026-08-20"
 output:
   html_document:
     toc: true

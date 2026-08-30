@@ -1,7 +1,6 @@
 ---
 title: "Activity 1 — Task 4: Continuous Salary Regression Modeling"
 author: "Group 08"
-date: "2026-08-24"
 output:
   html_document:
     toc: true

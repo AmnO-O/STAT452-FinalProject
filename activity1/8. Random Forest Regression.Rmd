@@ -1,7 +1,6 @@
 ---
 title: "Activity 1 — Task 8: Random Forest Regression"
 author: "Group 08"
-date: "2026-08-30"
 output:
   html_document:
     toc: true

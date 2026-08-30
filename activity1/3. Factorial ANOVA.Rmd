@@ -1,7 +1,6 @@
 ---
 title: "Activity 1 — Task 3: Inferential Statistics & Factorial ANOVA"
 author: "Group 08"
-date: "2026-08-18"
 output:
   html_document:
     latex_engine: xelatex

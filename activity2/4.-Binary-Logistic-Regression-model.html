@@ -11,9 +11,8 @@
 
 <meta name="author" content="Group 08" />
 
-<meta name="date" content="2026-08-30" />
 
-<title>Activity 2 — Task 5: Binary Logistic Regression Modeling</title>
+<title>Activity 2 — Task 4: Binary Logistic Regression Modeling</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -1621,35 +1620,34 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Activity 2 — Task 5: Binary Logistic
+<h1 class="title toc-ignore">Activity 2 — Task 4: Binary Logistic
 Regression Modeling</h1>
 <h4 class="author">Group 08</h4>
-<h4 class="date">2026-08-30</h4>
 
 </div>
 
 <div id="TOC">
 <ul>
-<li><a href="#binary-logistic-regression-modeling" id="toc-binary-logistic-regression-modeling">5 Binary Logistic
+<li><a href="#binary-logistic-regression-modeling" id="toc-binary-logistic-regression-modeling">4 Binary Logistic
 Regression Modeling</a>
 <ul>
-<li><a href="#research-question-and-data-preparation" id="toc-research-question-and-data-preparation">5.1 Research Question
+<li><a href="#research-question-and-data-preparation" id="toc-research-question-and-data-preparation">4.1 Research Question
 and Data Preparation</a></li>
-<li><a href="#model-fitting-and-odds-ratios" id="toc-model-fitting-and-odds-ratios">5.2 Model Fitting and Odds
+<li><a href="#model-fitting-and-odds-ratios" id="toc-model-fitting-and-odds-ratios">4.2 Model Fitting and Odds
 Ratios</a></li>
-<li><a href="#out-of-sample-classification-performance" id="toc-out-of-sample-classification-performance">5.3 Out-of-Sample
+<li><a href="#out-of-sample-classification-performance" id="toc-out-of-sample-classification-performance">4.3 Out-of-Sample
 Classification Performance</a></li>
-<li><a href="#random-forest-benchmark" id="toc-random-forest-benchmark">5.4 Random Forest Benchmark</a></li>
-<li><a href="#principal-component-analysis-pca-with-random-forest" id="toc-principal-component-analysis-pca-with-random-forest">5.5
+<li><a href="#random-forest-benchmark" id="toc-random-forest-benchmark">4.4 Random Forest Benchmark</a></li>
+<li><a href="#principal-component-analysis-pca-with-random-forest" id="toc-principal-component-analysis-pca-with-random-forest">4.5
 Principal Component Analysis (PCA) with Random Forest</a></li>
 </ul></li>
 </ul>
 </div>
 
 <div id="binary-logistic-regression-modeling" class="section level1">
-<h1>5 Binary Logistic Regression Modeling</h1>
+<h1>4 Binary Logistic Regression Modeling</h1>
 <div id="research-question-and-data-preparation" class="section level2">
-<h2>5.1 Research Question and Data Preparation</h2>
+<h2>4.1 Research Question and Data Preparation</h2>
 <p>This final task addresses <strong>Research Question 2 (RQ2)</strong>
 for Activity 2: <strong>Which personal factors (age, gender, family
 history) and environmental factors (employer prioritization, coworker
@@ -1686,7 +1684,7 @@ cat(&quot;Training cases:&quot;, nrow(train), &quot;| Test cases:&quot;, nrow(te
 <pre><code>## Training cases: 844 | Test cases: 211</code></pre>
 </div>
 <div id="model-fitting-and-odds-ratios" class="section level2">
-<h2>5.2 Model Fitting and Odds Ratios</h2>
+<h2>4.2 Model Fitting and Odds Ratios</h2>
 <p>We fit the logistic regression model on the training set using the
 seven specified demographic and workplace predictor groups. The
 reference groups are No treatment, Male gender, no family history, and a
@@ -1880,7 +1878,7 @@ associations at the 5% level.</strong></p>
 </div>
 </div>
 <div id="out-of-sample-classification-performance" class="section level2">
-<h2>5.3 Out-of-Sample Classification Performance</h2>
+<h2>4.3 Out-of-Sample Classification Performance</h2>
 <p>To answer the second half of the research question (“How accurately
 can the model classify?”), we apply the fitted model to the 211 unseen
 records in the test set.</p>
@@ -1956,7 +1954,7 @@ are not statistically significant at the 5% level.</p>
 </div>
 </div>
 <div id="random-forest-benchmark" class="section level2">
-<h2>5.4 Random Forest Benchmark</h2>
+<h2>4.4 Random Forest Benchmark</h2>
 <p>The logistic model is linear and assumes log-odds are a linear
 function of the predictors. To check whether a <em>nonlinear</em> tree
 ensemble can capture additional structure—interactions between
@@ -2298,7 +2296,7 @@ contribute only marginal splits.</p>
 </div>
 </div>
 <div id="principal-component-analysis-pca-with-random-forest" class="section level2">
-<h2>5.5 Principal Component Analysis (PCA) with Random Forest</h2>
+<h2>4.5 Principal Component Analysis (PCA) with Random Forest</h2>
 <p>We test empirically whether feeding the Random Forest PCA
 components—fitted strictly on the training set to prevent
 leakage—improves predictive performance.</p>

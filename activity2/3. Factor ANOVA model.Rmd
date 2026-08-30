@@ -1,7 +1,6 @@
 ---
 title: 'Activity 2 — Task 3: Factorial ANOVA'
 author: "Group 08"
-date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
   html_document:
     toc: true

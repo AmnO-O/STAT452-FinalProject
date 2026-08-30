@@ -11,7 +11,6 @@
 
 <meta name="author" content="Group 08" />
 
-<meta name="date" content="2026-08-30" />
 
 <title>Activity 1 — Task 8: Random Forest Regression</title>
 
@@ -1696,7 +1695,6 @@ display: none;
 <h1 class="title toc-ignore">Activity 1 — Task 8: Random Forest
 Regression</h1>
 <h4 class="author">Group 08</h4>
-<h4 class="date">2026-08-30</h4>
 
 </div>
 
@@ -1841,7 +1839,7 @@ out-of-sample performance.</p>
 <span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a>  <span class="fu">as.data.frame</span>() <span class="sc">%&gt;%</span></span>
 <span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>  <span class="fu">rownames_to_column</span>(<span class="st">&quot;Variable&quot;</span>) <span class="sc">%&gt;%</span></span>
 <span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="fu">desc</span>(<span class="st">`</span><span class="at">%IncMSE</span><span class="st">`</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a>  <span class="fu">select</span>(Variable, <span class="st">`</span><span class="at">%IncMSE</span><span class="st">`</span>, <span class="st">`</span><span class="at">IncNodePurity</span><span class="st">`</span>)</span>
+<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(Variable, <span class="st">`</span><span class="at">%IncMSE</span><span class="st">`</span>, <span class="st">`</span><span class="at">IncNodePurity</span><span class="st">`</span>)</span>
 <span id="cb24-6"><a href="#cb24-6" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(importance_df, <span class="at">digits =</span> <span class="dv">3</span>,</span>
 <span id="cb24-7"><a href="#cb24-7" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Random Forest variable importance (mean decrease in MSE)&quot;</span>)</span></code></pre></div>
 <table>
@@ -1927,8 +1925,20 @@ seniority dominate salary determination.</p>
 <div id="comparison-with-all-continuous-models" class="section level2">
 <h2>8.7 Comparison with all continuous models</h2>
 <div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" tabindex="-1"></a>comparison <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;task04_model_comparison.csv&quot;</span>) <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd)</span>
-<span id="cb28-2"><a href="#cb28-2" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(comparison <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">c</span>(RMSE_usd, MAE_usd), <span class="sc">~</span> <span class="fu">round</span>(.x, <span class="dv">2</span>))),</span>
-<span id="cb28-3"><a href="#cb28-3" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;All continuous models ranked by out-of-sample USD RMSE&quot;</span>)</span></code></pre></div>
+<span id="cb28-2"><a href="#cb28-2" tabindex="-1"></a>rf_row <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb28-3"><a href="#cb28-3" tabindex="-1"></a>  <span class="at">Model =</span> <span class="st">&quot;Random Forest&quot;</span>,</span>
+<span id="cb28-4"><a href="#cb28-4" tabindex="-1"></a>  <span class="at">RMSE_log =</span> rmse_log,</span>
+<span id="cb28-5"><a href="#cb28-5" tabindex="-1"></a>  <span class="at">MAE_log =</span> mae_log,</span>
+<span id="cb28-6"><a href="#cb28-6" tabindex="-1"></a>  <span class="at">R2_log =</span> r2_log,</span>
+<span id="cb28-7"><a href="#cb28-7" tabindex="-1"></a>  <span class="at">RMSE_usd =</span> rmse_usd,</span>
+<span id="cb28-8"><a href="#cb28-8" tabindex="-1"></a>  <span class="at">MAE_usd =</span> mae_usd,</span>
+<span id="cb28-9"><a href="#cb28-9" tabindex="-1"></a>  <span class="at">R2_usd =</span> r2_usd</span>
+<span id="cb28-10"><a href="#cb28-10" tabindex="-1"></a>)</span>
+<span id="cb28-11"><a href="#cb28-11" tabindex="-1"></a></span>
+<span id="cb28-12"><a href="#cb28-12" tabindex="-1"></a>comparison <span class="ot">&lt;-</span> <span class="fu">bind_rows</span>(comparison, rf_row) <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd)</span>
+<span id="cb28-13"><a href="#cb28-13" tabindex="-1"></a></span>
+<span id="cb28-14"><a href="#cb28-14" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(comparison <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">c</span>(RMSE_usd, MAE_usd), <span class="sc">~</span> <span class="fu">round</span>(.x, <span class="dv">2</span>))),</span>
+<span id="cb28-15"><a href="#cb28-15" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;All continuous models ranked by out-of-sample USD RMSE&quot;</span>)</span></code></pre></div>
 <table style="width:100%;">
 <caption>All continuous models ranked by out-of-sample USD
 RMSE</caption>
@@ -1943,7 +1953,7 @@ RMSE</caption>
 </colgroup>
 <thead>
 <tr class="header">
-<th align="left">model</th>
+<th align="left">Model</th>
 <th align="right">RMSE_log</th>
 <th align="right">MAE_log</th>
 <th align="right">R2_log</th>
@@ -1954,7 +1964,7 @@ RMSE</caption>
 </thead>
 <tbody>
 <tr class="odd">
-<td align="left">Random Forest regression</td>
+<td align="left">Random Forest</td>
 <td align="right">0.4821059</td>
 <td align="right">0.3396814</td>
 <td align="right">0.5600637</td>
@@ -1967,70 +1977,61 @@ RMSE</caption>
 <td align="right">0.5797565</td>
 <td align="right">0.4174088</td>
 <td align="right">0.3637964</td>
-<td align="right">42644.03</td>
-<td align="right">34793.81</td>
-<td align="right">0.5083621</td>
-</tr>
-<tr class="odd">
-<td align="left">Power-transformed OLS (salary^0.26)</td>
-<td align="right">0.5801059</td>
-<td align="right">0.4204853</td>
-<td align="right">0.3630294</td>
-<td align="right">42810.13</td>
-<td align="right">34627.45</td>
-<td align="right">0.5045247</td>
-</tr>
-<tr class="even">
-<td align="left">Elastic net regression</td>
-<td align="right">0.5833029</td>
-<td align="right">0.4205520</td>
-<td align="right">0.3559893</td>
-<td align="right">43385.11</td>
-<td align="right">35386.72</td>
-<td align="right">0.4911258</td>
+<td align="right">42280.43</td>
+<td align="right">33071.77</td>
+<td align="right">0.5167102</td>
 </tr>
 <tr class="odd">
 <td align="left">LASSO regression</td>
 <td align="right">0.5834117</td>
 <td align="right">0.4203073</td>
 <td align="right">0.3557488</td>
-<td align="right">43463.94</td>
-<td align="right">35394.48</td>
-<td align="right">0.4892749</td>
+<td align="right">42334.23</td>
+<td align="right">33283.16</td>
+<td align="right">0.5154793</td>
 </tr>
 <tr class="even">
-<td align="left">Multiple linear regression - stepwise</td>
+<td align="left">Elastic net regression</td>
+<td align="right">0.5833029</td>
+<td align="right">0.4205520</td>
+<td align="right">0.3559893</td>
+<td align="right">42350.69</td>
+<td align="right">33294.02</td>
+<td align="right">0.5151026</td>
+</tr>
+<tr class="odd">
+<td align="left">Power-transformed OLS (salary^0.26)</td>
+<td align="right">0.5908611</td>
+<td align="right">0.4261331</td>
+<td align="right">0.3391914</td>
+<td align="right">42877.42</td>
+<td align="right">34069.29</td>
+<td align="right">0.5029659</td>
+</tr>
+<tr class="even">
+<td align="left">Multiple linear regression (stepwise)</td>
 <td align="right">0.5879843</td>
 <td align="right">0.4244736</td>
 <td align="right">0.3456104</td>
-<td align="right">45473.98</td>
-<td align="right">36532.46</td>
-<td align="right">0.4409447</td>
+<td align="right">43680.72</td>
+<td align="right">34341.44</td>
+<td align="right">0.4841677</td>
 </tr>
 <tr class="odd">
-<td align="left">Polynomial regression</td>
+<td align="left">Multiple linear regression (full)</td>
 <td align="right">0.5883472</td>
 <td align="right">0.4247142</td>
 <td align="right">0.3448024</td>
-<td align="right">45498.39</td>
-<td align="right">36559.49</td>
-<td align="right">0.4403442</td>
-</tr>
-<tr class="even">
-<td align="left">Multiple linear regression - full</td>
-<td align="right">0.5883472</td>
-<td align="right">0.4247142</td>
-<td align="right">0.3448024</td>
-<td align="right">45498.39</td>
-<td align="right">36559.49</td>
-<td align="right">0.4403442</td>
+<td align="right">43694.98</td>
+<td align="right">34352.32</td>
+<td align="right">0.4838309</td>
 </tr>
 </tbody>
 </table>
 <p>The Random Forest achieves the <strong>lowest out-of-sample
 RMSE</strong> of approximately 40,848 USD and the <strong>highest
-R²</strong> of 0.549, outperforming Ridge regression (42,644 USD RMSE,
-R² = 0.508) by roughly 1,796 USD. The improvement is about 4.2% in RMSE
+R²</strong> of 0.549, outperforming Ridge regression (42,280 USD RMSE,
+R² = 0.517) by roughly 1,432 USD. The improvement is about 3.4% in RMSE
 — a meaningful gain from adding a non-linear, interaction-aware
 model.</p>
 <p>The Random Forest’s key advantage is its ability to capture

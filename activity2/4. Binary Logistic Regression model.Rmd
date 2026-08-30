@@ -1,7 +1,6 @@
 ---
-title: 'Activity 2 — Task 5: Binary Logistic Regression Modeling'
+title: 'Activity 2 — Task 4: Binary Logistic Regression Modeling'
 author: "Group 08"
-date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
   html_document:
     toc: true
@@ -20,9 +19,9 @@ knitr::opts_knit$set(root.dir = ".")
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-# 5 Binary Logistic Regression Modeling
+# 4 Binary Logistic Regression Modeling
 
-## 5.1 Research Question and Data Preparation
+## 4.1 Research Question and Data Preparation
 
 This final task addresses **Research Question 2 (RQ2)** for Activity 2:
 **Which personal factors (age, gender, family history) and environmental
@@ -59,7 +58,7 @@ test  <- data[-train_idx, ]
 cat("Training cases:", nrow(train), "| Test cases:", nrow(test), "\n")
 ```
 
-## 5.2 Model Fitting and Odds Ratios
+## 4.2 Model Fitting and Odds Ratios
 
 We fit the logistic regression model on the training set using the seven
 specified demographic and workplace predictor groups. The reference groups are
@@ -158,7 +157,7 @@ In short: **family history is the dominant predictor, with smaller positive
 associations for age and Female gender; the measured workplace/environmental
 factors do not show statistically significant associations at the 5% level.**
 
-## 5.3 Out-of-Sample Classification Performance
+## 4.3 Out-of-Sample Classification Performance
 
 To answer the second half of the research question ("How accurately can the model classify?"), we apply the fitted model to the 211 unseen records in the test set.
 
@@ -218,7 +217,7 @@ the 0.5 probability threshold.
 
 **Final Answer:** The logistic model achieves approximately `r round(acc_val * 100, 1)`% accuracy and a ROC-AUC of `r round(auc_value, 3)`, indicating moderate discrimination. Family history is the strongest predictor; age has a small but statistically significant positive association, and Female respondents have significantly higher odds of seeking treatment than Male respondents. The workplace/environmental variables in this model are not statistically significant at the 5% level.
 
-## 5.4 Random Forest Benchmark
+## 4.4 Random Forest Benchmark
 
 The logistic model is linear and assumes log-odds are a linear function of the predictors. To check whether a *nonlinear* tree ensemble can capture additional structure---interactions between predictors or curvilinear effects---we fit a **Random Forest** classifier on the exact same binary target (`Treatment_Cat`) and the same training/test partition (seed 2026, 844/211).
 
@@ -360,7 +359,7 @@ The Random Forest achieves an out-of-sample **accuracy of `r round(rf_acc * 100,
 
 Critically, the Random Forest's variable-importance ranking **corroborates the logistic finding**: `Family_History` is far and away the most influential predictor, while workplace measures, tech-company status, and gender contribute only marginal splits.
 
-## 5.5 Principal Component Analysis (PCA) with Random Forest
+## 4.5 Principal Component Analysis (PCA) with Random Forest
 
 We test empirically whether feeding the Random Forest PCA components---fitted strictly on the training set to prevent leakage---improves predictive performance.
 
