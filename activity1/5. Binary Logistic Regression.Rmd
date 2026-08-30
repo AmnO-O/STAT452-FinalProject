@@ -26,21 +26,23 @@ is a binary indicator based on the sample 75th percentile of `salary_in_usd`.
 Unlike the continuous models in Task 4, the fitted values here are
 probabilities, so binary logistic regression is appropriate.
 
-The cleaned dataset from Task 1 contains 565 observations and no missing
-values or duplicates. The predictors are grouped or converted to factors where
-needed so that sparse categories do not create unstable estimates.
+The supplied training and test datasets contain 565 cleaned observations with
+no missing values or duplicates. The predictors are grouped or converted to
+factors where needed so that sparse categories do not create unstable estimates.
 
 ```{r}
 library(tidyverse)
-data <- read.csv("dataset/ds_salaries_clean.csv")
+train <- read.csv("dataset/train_data.csv")
+test <- read.csv("dataset/test_data.csv")
+data <- bind_rows(train, test)
 ```
 
 # 5 Binary Logistic Regression Modeling
 
-This analysis follows a clear workflow: define the binary target, create the
-training/testing split, prepare predictors and fit the logistic model, interpret
-the model and its fit, evaluate in-sample classification, generate out-of-sample
-predictions, and summarize the main findings.
+This analysis follows a clear workflow: define the binary target, prepare
+predictors and fit the logistic model, interpret the model and its fit,
+evaluate in-sample classification, generate out-of-sample predictions, and
+summarize the main findings.
 
 
 ## 5.1 Binary target: `is_top_tier` (Q3 = 75th percentile)
@@ -59,6 +61,11 @@ data <- data %>%
     is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L)
   )
 
+train <- train %>%
+  mutate(is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L))
+test <- test %>%
+  mutate(is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L))
+
 target_summary <- data %>%
   count(is_top_tier, name = "n") %>%
   mutate(
@@ -76,56 +83,7 @@ The observed top-tier share can be slightly above 25% because several salaries
 may be tied at Q3. This is a consequence of applying the required `>=` rule,
 not a data-cleaning error.
 
-## 5.2 Training and testing partitions
-
-Model quality is judged on observations not seen during fitting, so the 565
-cleaned records are split into training (80%) and test (20%) sets. Salaries
-evolve over time, so the split leans toward recent data: training keeps all
-287 records from 2020–2021 plus 165 randomly sampled 2022 records (452 rows),
-while the 113-row test set contains only 2022 records. This is a year-aware,
-rather than strictly chronological, split: approximately three fifths of the
-2022 records also inform the fit, preserving the intended 80:20 balance.
-
-```{r split-5-2}
-set.seed(2026)
-used_cols <- c("salary_in_usd", "experience_level", "employment_type",
-               "company_size", "job_category", "location_group", "remote_ratio",
-               "work_year", "is_top_tier")
-stopifnot(nrow(data) == 565,
-          sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
-
-check_vars <- c("employment_type", "job_category", "location_group",
-                "experience_level", "company_size")
-
-repeat {
-  idx <- sample(nrow(data), floor(0.8 * nrow(data)))
-  tr  <- data[idx, ]
-  te  <- data[-idx, ]
-  ok  <- all(vapply(check_vars,
-                    function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
-  if (ok) break
-}
-
-train <- tr
-test <- te
-
-stopifnot(nrow(train) == 452, nrow(test) == 113,
-          all(!test$row_id %in% train$row_id))
-```
-
-The draw is checked so that rare categories (contract and freelance employment
-have 5 and 4 records dataset-wide) stay represented in training. The fixed
-seed makes the split fully reproducible and prevents prediction failures from
-unseen factor levels.
-
-```{r split-5-2-composition}
-table(train$work_year);        table(test$work_year)
-table(train$experience_level); table(test$experience_level)
-table(train$job_category);     table(test$job_category)
-table(train$employment_type);  table(test$employment_type)
-```
-
-## 5.3 Predictor preparation and model fitting
+## 5.2 Predictor preparation and model fitting
 
 Categorical predictors are converted to factors with explicit, meaningful
 reference levels. Thus, every odds ratio is interpreted relative to an
@@ -136,9 +94,10 @@ Task 1 showed that employment type and the individual non-US location groups
 are sparse. In particular, some categories have no top-tier observations,
 which can cause complete separation and unstable logistic coefficients. To
 retain their information without that problem, employment is grouped as
-full-time versus non-full-time and company location as US versus non-US. The
-job-category grouping and all other factor definitions come directly from the
-Task 1 cleaned data.
+full-time versus non-full-time and company location as US versus non-US. Similarly, 
+the `is_local` indicator was excluded to prevent data sparsity and quasi-complete 
+separation caused by its extreme class imbalance. The job-category grouping and 
+all other factor definitions come directly from the Task 1 cleaned data.
 
 ```{r}
 job_category_levels <- levels(
@@ -188,9 +147,9 @@ logit_model <- glm(
 summary(logit_model)
 ```
 
-## 5.4 Model Interpretation and Model Fit
+## 5.3 Model Interpretation and Model Fit
 
-### 5.4.1 Odds Ratios and Confidence Intervals
+### 5.3.1 Odds Ratios and Confidence Intervals
 
 For a coefficient $\beta$, `exp(beta)` is the odds ratio (OR), holding the
 other predictors constant. An OR above 1 indicates higher odds of top-tier
@@ -239,13 +198,13 @@ fit_summary <- tibble(
 knitr::kable(fit_summary, caption = "In-sample logistic-model fit summary")
 ```
 
-### 5.4.2 Model Fit Summary
+### 5.3.2 Model Fit Summary
 
 The odds-ratio table and model-fit statistics (AIC, McFadden $R^2$) provide baseline in-sample performance metrics. The model's coefficients reveal which professional characteristics are significantly associated with top-tier salary in the training data. These relationships are examined visually and in classification terms below.
 
-## 5.5 In-Sample Visualizations and Classification Performance
+## 5.4 In-Sample Visualizations and Classification Performance
 
-### 5.5.1 Predicted Probability Curve
+### 5.4.1 Predicted Probability Curve
 
 To visualize the logistic regression curve for a model with multiple categorical predictors, we plot the predicted probabilities against the model's linear predictors (log-odds). This creates the characteristic "S-curve" of logistic regression.
 
@@ -294,7 +253,7 @@ ggplot(plot_data, aes(x = log_odds)) +
   )
 ```
 
-### 5.5.2 In-Sample Confusion Matrix and Classification Metrics
+### 5.4.2 In-Sample Confusion Matrix and Classification Metrics
 
 To evaluate classification performance on the training data, predicted probabilities are converted to binary classes using a 0.5 decision threshold. The confusion matrix below summarizes in-sample classification accuracy and breakdown of True Positives (TP), False Positives (FP), True Negatives (TN), and False Negatives (FN).
 
@@ -312,7 +271,7 @@ cm_train <- table(
   Predicted = train_predictions$predicted_class
 )
 
-cat("=== In-Sample Confusion Matrix (Training Set, n=452) ===\n")
+cat("=== In-Sample Confusion Matrix (Training Set, n=", nrow(train), ") ===\n", sep = "")
 print(cm_train)
 
 # Extract and display classification metrics
@@ -356,9 +315,12 @@ knitr::kable(
 
 The training set confusion matrix and metrics provide a baseline for in-sample performance. The 0.5 probability threshold classifies observations based on the model's fitted probabilities; this threshold can be adjusted in Task 6 to optimize for specific business objectives (e.g., minimizing false positives).
 
-## 5.6 Out-of-Sample Predictions for Task 6 Evaluation
+## 5.5 Out-of-Sample Predictions for Task 6 Evaluation
 
-The fitted logistic model is applied to the held-out test set below to generate predictions for evaluation in Task 6. Classification metrics (accuracy, sensitivity, specificity, ROC-AUC, precision, F1-score) will be computed from the test set predictions to assess the model's generalization capability.
+The fitted logistic model is applied to the supplied test set below to generate
+predictions for evaluation in Task 6. Classification metrics (accuracy,
+sensitivity, specificity, ROC-AUC, precision, F1-score) will be computed from
+the test-set predictions to assess the model's generalization capability.
 
 ```{r test-predictions}
 test_predictions <- test %>%
@@ -370,13 +332,13 @@ test_predictions <- test %>%
 head(test_predictions[c("row_id", "is_top_tier", "predicted_probability", "predicted_class")])
 ```
 
-## 5.7 Interpretation and Main Findings
+## 5.6 Interpretation and Main Findings
 
-### 5.7.1 Training Set Findings
+### 5.6.1 Training Set Findings
 
-The odds-ratio table is estimated from the 452 training observations selected
-by the seeded global random split. Each odds ratio compares one category with
-its reference category while holding the other predictors constant. The
+The odds-ratio table is estimated from the supplied training observations. Each
+odds ratio compares one category with its reference category while holding the
+other predictors constant. The
 reference profile is entry-level (EN), small-company (S), 0% remote work, Data
 Analyst, full-time employment, and a non-US company location. For example, an
 odds ratio above 1 for US company location means that the estimated odds of
@@ -392,8 +354,10 @@ intervals show greater instability.
 
 These are adjusted associations observed in the training data, not causal salary effects. The model contains no interaction terms, so each coefficient describes an average association under the model's additive assumption. A non-significant coefficient on the training set does not prove that a characteristic has no effect; it simply indicates a lack of statistically significant evidence at the 5% level in the training sample. Estimates for the non-full-time and 50% remote-work groups should be treated cautiously because their smaller sample sizes produce wider confidence intervals in the training data.
 
-### 5.7.2 Train-Test Evaluation Framework
+### 5.6.2 Train-Test Evaluation Framework
 
-The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the 452 training observations. To assess whether the model's learned associations generalize, the fitted model is applied to the held-out test set (113 records). The training-test split strategy (global random split) helps protect against over-optimistic performance claims and evaluates the model's ability to predict top-tier status for unobserved records across the entire dataset.
+The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the supplied
+training data. To assess whether the model's learned associations generalize,
+the fitted model is applied to the supplied test set.
 
 The test-set predictions and their corresponding classification metrics are computed in the section above. These out-of-sample evaluations, including accuracy, sensitivity, specificity, ROC-AUC, and other performance measures, will be calculated and compared to in-sample training performance in Task 6 to determine whether the model generalizes or exhibits overfitting.

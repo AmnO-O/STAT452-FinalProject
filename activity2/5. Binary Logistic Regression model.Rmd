@@ -63,7 +63,7 @@ We fit the logistic regression model on the training set using both demographic 
 logit_model <- glm(
   Treatment_Cat ~ Age + Gender_Category + Family_History + 
     Employer_Mental_Importance + Employer_Phys_Importance + 
-    Coworker_Reaction_Score + Tech_Company_Cat,
+    Coworker_Reaction_Score + Tech_Company_Cat + as.factor(Year),
   family = binomial(link = "logit"),
   data = train
 )
