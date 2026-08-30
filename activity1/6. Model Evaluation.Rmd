@@ -65,9 +65,9 @@ best_r2 <- ordered_metrics$R2_usd[1]
 second_rmse <- ordered_metrics$RMSE_usd[2]
 ```
 
-Looking at the rankings table, the Power-transformed OLS model clearly took the lead. It achieved the lowest out-of-sample error (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD) and the highest $R^2$ (`r round(best_r2, 3)`).
+Looking at the rankings table, the Ridge regression model takes a razor-thin lead. It achieved the lowest out-of-sample error (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD) and the highest $R^2$ (`r round(best_r2, 3)`).
 
-- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.26) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a close second (RMSE of `r format(round(second_rmse), big.mark=",")` USD), proving that shrinking the coefficients helped manage the noise from our dummy variables.
+- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.26) instead, the model successfully stabilized the variance without completely flattening out the extreme high values, landing as the runner-up (RMSE of `r format(round(second_rmse), big.mark=",")` USD, a hair behind the winner). Ridge regression came out on top (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD), proving that shrinking the coefficients helped manage the noise from our many dummy variables.
 
 - Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error around the low-to-mid 40,000 USD range sounds large, but in a global dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, explaining a meaningful share of the variance on held-out records is a solid baseline.
 
@@ -118,9 +118,19 @@ Our logistic regression achieved an overall Accuracy of `r round(acc_val * 100, 
 
 ## 6.3 Best model selection and justification
 
-**1. Best Continuous Model: Power-Transformed OLS**
+**1. Best Continuous Model: Ridge Regression**
 
-We select the Box-Cox Power-Transformed model. By mathematically finding the optimal middle ground between raw dollars and a harsh log transformation, it achieved the lowest out-of-sample prediction error (RMSE roughly `r format(round(best_rmse), big.mark=",")` USD) and outperformed complex penalized models like LASSO and Elastic-Net. It proves that choosing the correct response scale is often more powerful than aggressively shrinking predictors.
+We select the Ridge model. By shrinking the 21 dummy-variable columns toward
+zero, it curbed the noise from the many two-digit-frequency categories in our
+design matrix and achieved the lowest out-of-sample prediction error (RMSE
+roughly `r format(round(best_rmse), big.mark=",")` USD, $R^2$ = `r round(best_r2, 3)`)
+along with the best USD-level $R^2$. The Box-Cox power transform
+(salary\^0.26) finished a hair behind (`r format(round(second_rmse), big.mark=",")` USD),
+demonstrating that fixing the response scale and shrinking predictors are
+complementary ways to stabilize a global salary model — and that on a single
+113-row holdout the top candidates are nearly indistinguishable. Because the
+penalized fit comes without an interpretable coefficient table, we pair the
+Ridge winner with the stepwise OLS model for interpreting the drivers.
 
 **2. Best Classification Model: Binary Logistic Regression**
 

@@ -138,10 +138,14 @@ model and interpret its coefficients.
 
 ### A reference model on raw dollars
 
-All models in this section share the same right-hand side — experience level,
-job category, employment type, company size, grouped employer location,
-remote-work ratio, and survey year. The reference version regresses the raw
-dollar amount on them:
+All working models in this section share the same right-hand side — experience
+level, job category, employment type, company size, grouped employer location,
+remote-work ratio, survey year, and `is_local` (1 when the employer country
+matches the employee's country of residence, 0 otherwise). The reference version
+below regresses the raw dollar amount on the demographic design *without*
+`is_local`, purely to choose the Box–Cox response scale; every working model that
+follows (log, power, and penalized) carries the full set including `is_local`, so
+the residence-match signal competes fairly with the other predictors.
 
 ```{r raw-reference}
 ols_raw <- lm(salary_in_usd ~ experience_level + job_category + employment_type +
@@ -191,7 +195,7 @@ The Box–Cox family asks which power $\text{salary}^{\lambda}$ makes the
 linear model most consistent with its assumptions:
 
 ```{r boxcox-scale}
-bc <- MASS::boxcox(ols_raw, plotit = TRUE)
+bc <- MASS::boxcox(ols_raw, lambda = seq(-2, 2, length = 100), plotit = TRUE)
 lambda_hat <- bc$x[which.max(bc$y)]
 ## Profile-likelihood 95% confidence interval for lambda
 cut_off  <- max(bc$y) - qchisq(0.95, 1) / 2
@@ -213,25 +217,30 @@ Task 6, which owns the held-out comparison.
 
 $$\ln(\text{salary}_i) = \beta_0 + \beta_1\,\text{experience}_i +
 \beta_2\,\text{role}_i + \beta_3\,\text{contract type}_i +
-\beta_4\,\text{company size}_i + \beta_5\,\text{location}_i +
-\beta_6\,\text{remote ratio}_i + \beta_7\,\text{year}_i + \varepsilon_i$$
+\beta_4\,\text{company size}_i + \beta_5\,\text{employer location}_i +
+\beta_6\,\text{remote ratio}_i + \beta_7\,\text{year}_i +
+\beta_8\,\text{is\_local}_i + \varepsilon_i$$
 
-Location enters through the grouped employer-country variable only. The
-employee-residence dummies are deliberately left out: for the largely
-non-remote workforce the two countries coincide, and carrying both would
-introduce near-duplicate predictors whose inflated variances distort every
-coefficient's standard error.
+Location enters through the grouped employer-country variable plus a single
+`is_local` flag that records whether the employer country matches the
+employee's country of residence. The full employee-residence dummies are
+deliberately left out: for the largely non-remote workforce the two countries
+coincide, and carrying both sets of dummies would introduce near-duplicate
+predictors whose inflated variances distort every coefficient's standard
+error. The one-column indicator captures the essence of the residence signal
+at negligible collinearity cost.
 
 ```{r ols-full}
 ols_full <- lm(log_salary ~ experience_level + job_category + employment_type +
-                 company_size + location_group + remote_ratio + work_year,
+                 company_size + location_group + remote_ratio + work_year + is_local,
                data = train)
 summary(ols_full)
 ```
 
-The transformed model explains about **62% of the variation in log-salary**
-(adjusted R² = 0.619) and is highly significant overall (*F* = 32.8 on 23 and
-428 df, *p* < 10⁻¹⁶) — a clear gain over the raw-scale reference.
+The transformed model explains about **64% of the variation in log-salary**
+(adjusted R² = 0.638) and is highly significant overall (*F* = 34.1 on 24 and
+427 df, *p* < 10⁻¹⁶) — a clear gain over the raw-scale reference, and a step
+up from the same design without `is_local` (adjusted R² = 0.619).
 
 ### Re-checking the assumptions after the transformation
 
@@ -240,7 +249,7 @@ The transformed model explains about **62% of the variation in log-salary**
 ## so the transformation choice is judged on evidence rather than habit.
 z_train  <- train$salary_in_usd^lambda_hat
 ols_power <- lm(z_train ~ experience_level + job_category + employment_type +
-                  company_size + location_group + remote_ratio + work_year,
+                  company_size + location_group + remote_ratio + work_year + is_local,
                 data = train)
 diag_power <- diag_row(paste0("salary^", round(lambda_hat, 2)), ols_power)
 diag_log <- diag_row("ln(salary)", ols_full)
@@ -266,33 +275,35 @@ vif_tab
 ```
 
 Side by side, the log transformation earns its place: the Shapiro–Wilk
-p-value rises from 1.3·10⁻²¹ (raw dollars) to 1.9·10⁻¹⁴ — a roughly
-fourteen-million-fold improvement in consistency with normality — and the
-maximum Cook's distance falls by a factor of nearly four (0.180 → 0.048), so
-no single record any longer dictates the fit. The Box–Cox-optimal power does
-better still: normality improves to *p* = 1.8·10⁻⁹ and its Breusch–Pagan
-statistic (34.6, *p* = 0.057) is no longer significant, unlike the log
-scale's (40.9, *p* = 0.012) and the raw scale's (41.6, *p* = 0.010). Two
-conclusions follow. First, the log transform clearly repairs the worst
-failures of the raw-dollar model, but residual non-normality (and on the log
-scale, heteroskedasticity) persists — the rejections trace to the thin
-cluster of very low salaries documented in the EDA — so robust inference is
-required. Second, because the power scale dominates on diagnostics and even
-reaches homoskedasticity, keeping ln(salary) as the working response rests
-on its interpretable percentage coefficients (used throughout this section);
-Task 6 holds the empirical verdict on which scale predicts best. On the
+p-value rises from 1.3·10⁻²¹ (raw dollars) to 3.0·10⁻¹³ — a roughly
+two-hundred-and-thirty-million-fold improvement in consistency with
+normality — and the maximum Cook's distance falls by a factor of about three
+(0.180 → 0.060), so no single record any longer dictates the fit. The
+Box–Cox-optimal power behaves comparably (normality *p* = 1.9·10⁻⁸, maximum
+Cook's distance 0.072) without clearly outdoing the log on any criterion,
+and — like the log scale — its Breusch–Pagan statistic remains significant
+(42.2, *p* = 0.012; log: 54.7, *p* = 3.4·10⁻⁴; raw: 41.6, *p* = 0.010). Two
+conclusions follow. First, the transformations repair the worst failures of
+the raw-dollar model, but residual non-normality and heteroskedasticity
+persist — the rejections trace to the thin cluster of very low salaries
+documented in the EDA — so robust inference is required regardless of scale.
+Second, because neither transformation attains clean diagnostics on every
+criterion, the working response is chosen by interpretability — ln(salary)
+and its percentage coefficients, used throughout this section — while Task 6
+holds the empirical verdict on which scale predicts best. On the
 collinearity side, all df-adjusted GVIFs lie between 1.03 and 1.26 — far
-under any common threshold — confirming that the single location route
-avoided redundancy.
+under any common threshold — confirming that the single location route plus
+the sparse `is_local` flag avoided redundancy.
 
 ### Refining the model by AIC
 
 The full model contains two linear trend terms (`remote_ratio`, `work_year`)
 whose usefulness a parsimonious model should justify. Stepwise selection in
 both directions, guided by Akaike's information criterion, removes exactly
-those two terms while keeping all five factor blocks: the AIC improves from
-676 to 674 at essentially unchanged adjusted R² (0.619 → 0.620), i.e., the
-simpler model predicts equally well with two fewer terms.
+the survey-year term while keeping `remote_ratio`, all five factor blocks,
+and the `is_local` flag: the AIC improves from 654.5 to 652.5 at unchanged
+adjusted R² (0.638), i.e., the simpler model predicts equally well without
+the year trend.
 
 ```{r ols-stepwise}
 ols_step <- step(ols_full, direction = "both", trace = FALSE)
@@ -343,37 +354,43 @@ print(coef_pct, n = 30)
 Four patterns stand out.
 
 **Experience dominates.** Relative to an entry-level professional, mid-level
-colleagues earn about 24% more, seniors about 68% more, and executives about
-159% more — a steep, strictly increasing gradient that makes seniority the
+colleagues earn about 24% more, seniors about 65% more, and executives about
+157% more — a steep, strictly increasing gradient that makes seniority the
 single strongest career-side lever in the data.
 
 **Role matters within the field.** Against the Data-Analyst baseline, moving
-into engineering (+31%) or science (+35%) pays moderately; specializing in
-machine learning/AI (+46%), leading teams (+54%), or research (+62%) pays
+into engineering (+33%) or science (+39%) pays moderately; specializing in
+machine learning/AI (+50%), leading teams (+59%), or research (+70%) pays
 substantially more. The heterogeneous "Other" category is statistically
 indistinguishable from analysts, which supports keeping it separate rather
 than forcing it into another family.
 
-**Contract structure shapes pay.** Part-time (−69%) and freelance (−73%)
+**Contract structure shapes pay.** Part-time (−67%) and freelance (−66%)
 arrangements earn far less than full-time contracts, consistent with
 partial-year or project-based engagement; contract work shows a positive but
-unreliable premium (+30%), unsurprising given only five such records.
+unreliable premium (+31%), unsurprising given only five such records.
 
-**Geography sets the level.** Holding profession constant, a US-based
-employer pays roughly 162% above the rest-of-world baseline — by far the
-largest single effect in the model — with Canada (+98%), Great Britain
-(+73%), Germany (+77%) and France (+40%) forming a clear second tier, while
-India-based employers pay about 48% below it. Spain is indistinguishable from
-the baseline. Company size matters less: large firms pay about 37% more than
-small ones (*p* < 0.001); medium firms sit at +21%, significant on both
-ordinary and robust errors (*p* = 0.010 ordinary, *p* = 0.048 robust).
+**Residence-match carries its own premium.** Being employed where you live is
+worth roughly **51% more** than an otherwise identical posting at an overseas
+employer (*p* = 2·10⁻⁶ ordinary, *p* = 0.0020 robust) — the regression's
+confirmation that the cross-border gap Task 6 finds on the same split is a
+real structural feature, not an artifact of which countries appear.
+
+**Geography sets the level.** Holding profession and residence-match constant,
+a US-based employer pays roughly 155% above the rest-of-world baseline — by
+far the largest single effect in the model — with Canada (+88%), Great
+Britain (+69%), Germany (+68%) and France (+37%) forming a clear second tier,
+while India-based employers pay about 52% below it. Spain is indistinguishable
+from the baseline. Company size matters less: large firms pay about 35% more
+than small ones (*p* < 0.001); medium firms sit at +17%, significant only on
+the ordinary errors (*p* = 0.030 ordinary, *p* = 0.083 robust).
 
 ## 4.3 Polynomial Regression
 
-Stepwise selection suggested the linear trend terms added little, but that
-raises a subtler question: is the relationship curved? Polynomial regression
-answers it by allowing `remote_ratio` and `work_year` each to bend instead of
-following a straight line. Both variables take exactly three distinct values
+Stepwise selection dropped the survey-year trend but kept `remote_ratio`;
+that raises a subtler question: is the remaining trend relationship curved?
+Polynomial regression answers it by allowing `remote_ratio` and `work_year`
+each to bend instead of following a straight line. Both variables take exactly three distinct values
 (0/50/100 and 2020/2021/2022), so degree 3 is not identifiable; degree 2 is
 the ceiling and effectively lets every level carry its own effect. We compare
 the linear and quadratic specifications with the nested *F*-test.
@@ -408,17 +425,20 @@ cat("\nRESET test on selected model: F =", round(reset_result$statistic, 3),
     " p =", signif(reset_result$p.value, 4), "\n")
 ```
 
-The quadratic specification is preferred: the *F*-test rejects the purely
-linear form (*F* = 3.67, *p* = 0.026), adjusted R² edges up from 0.619 to
-0.624, and the RESET test finds no remaining functional-form misspecification
-(*F* = 2.08, *p* = 0.13). In substantive terms, fully-remote and fully
-on-site arrangements sit at different pay levels than a straight line through
-the middle would suggest — the 50% hybrid point behaves differently from the
-average of the extremes.
+Out of sample the choice matters, but on the training data the quadratic
+specification is not supported: the *F*-test fails to reject the purely
+linear form (*F* = 2.48, *p* = 0.085), adjusted R² barely edges up from 0.638
+to 0.640, and the RESET test finds no remaining functional-form
+misspecification on the selected degree-1 model (*F* = 1.99, *p* = 0.138). In
+substantive terms there is no evidence that fully-remote and fully on-site
+arrangements sit off the straight line connecting the extremes — the 50%
+hybrid point behaves broadly like the average of the two ends — so the
+parsimonious linear version is carried forward as the polynomial candidate
+for Task 6.
 
 ## 4.4 Ridge and LASSO Regression
 
-Ordinary least squares treats all twenty columns as free parameters.
+Ordinary least squares treats all 21 columns as free parameters.
 Shrinkage methods trade a little bias for variance reduction and, in the
 LASSO's case, automatic variable selection — a useful cross-check on the
 stepwise route. They require standardized inputs: all four numeric predictors
@@ -441,7 +461,7 @@ for (col in c("exp_level_ord", "company_size_ord", "remote_ratio", "work_year"))
 build_matrix <- function(df) {
   model.matrix(
     ~ exp_level_ord_ts + company_size_ord_ts + remote_ratio_ts +
-      work_year_ts + job_category + employment_type + location_group,
+      work_year_ts + job_category + employment_type + location_group + is_local,
     data = df
   )[, -1]   # glmnet supplies its own intercept
 }
@@ -496,9 +516,11 @@ cat("Selected elastic-net alpha:", alpha_best,
 ```
 
 Sweeping the mixing parameter across its full range ($\alpha$ = 0, 0.1, …, 1)
-moves the cross-validated error by about 0.16%, and every mixture retains
-all twenty columns at $\lambda_{\min}$. With the surface this flat there is no
-meaningful interior optimum; the CV-selected mixture
+moves the cross-validated error by about 0.08%, and nearly every column
+survives at $\lambda_{\min}$ (19–21 of the 21 columns), with the flat
+`work_year_ts` and `location_groupES` effects the only ones ever shrunk all
+the way to zero. With the surface this flat there is no meaningful interior
+optimum; the CV-selected mixture
 ($\alpha$ = `r round(alpha_best, 1)`) is carried forward for Task 6 to score
 alongside the other specifications.
 
@@ -516,7 +538,8 @@ cat("LASSO retains", length(lasso_survivors), "of", nrow(lasso_coefs_min) - 1,
 
 parent_terms <- c("exp_level_ord_ts", "company_size_ord_ts",
                   "remote_ratio_ts", "work_year_ts",
-                  "job_category", "employment_type", "location_group")
+                  "job_category", "employment_type", "location_group",
+                  "is_local")
 map_to_parent <- function(dummy_names) {
   vapply(dummy_names, function(nm) {
     hit <- parent_terms[startsWith(nm, parent_terms)]
@@ -537,24 +560,25 @@ cat("Stepwise only:",     setdiff(stepwise_terms, lasso_parents), "\n")
 cat("LASSO only:        ", setdiff(lasso_parents, stepwise_terms), "\n")
 ```
 
-The two selection philosophies converge on the same story: both retain the
-five substantive blocks — experience level, job family, contract type,
-company size, and location. LASSO additionally preserves small linear
-`remote_ratio` and `work_year` components that AIC pruning had discarded;
-their coefficients are negligible in size, so the disagreement is cosmetic
-rather than substantive.
+The two selection philosophies now converge exactly: both retain the same
+seven blocks — experience level, job family, contract type, company size,
+location, remote ratio, and the `is_local` flag — and both discard the
+survey-year term (AIC by dropping `work_year`, LASSO by shrinking
+`work_year_ts` exactly to zero alongside the flat `location_groupES` dummy).
+The agreement is no longer cosmetic: stepwise and LASSO nominate the
+identical variable set.
 
 A final sensitivity check replaces the ordinal encodings of experience and
 company size with full dummies inside the LASSO, the two variants being
 compared by ten-fold cross-validation on the training data. Accuracy hardly
-moves (CV RMSE 0.5154 vs 0.5176): the ordinal simplification costs nothing
+moves (CV RMSE 0.5055 vs 0.5077): the ordinal simplification costs nothing
 predictive.
 
 ```{r sensitivity-encoding}
 build_matrix_factor <- function(df) {
   model.matrix(
     ~ experience_level + company_size + remote_ratio_ts + work_year_ts +
-      job_category + employment_type + location_group,
+      job_category + employment_type + location_group + is_local,
     data = df
   )[, -1]
 }
@@ -625,11 +649,11 @@ cat("held-out comparison across scales is deferred to Task 6.\n")
 ```
 
 Three points follow. First, the **stepwise-reduced model matches the full
-model on training data** — equal adjusted R² (0.619) at a slightly lower AIC
-(674 vs 676) with two fewer parameters — so the pruning costs no in-sample
-fit while removing the marginal linear trend terms, the qualitative
-conclusion of Section 4.2. Second, the **regularized fits show essentially
-identical training R² to the OLS variants** (all in the range 0.63–0.64), as
+model on training data** — equal adjusted R² (0.638) at a slightly lower AIC
+(652.5 vs 654.5) with one fewer parameter — so the pruning costs no in-sample
+fit while removing the marginal survey-year trend, the qualitative conclusion
+of Section 4.2. Second, the **regularized fits show essentially identical
+training R² to the OLS variants** (all in the range 0.651–0.657), as
 expected: shrinkage buys stability rather than in-sample fit, and their
 advantage, if any, materializes out of sample — which Task 6 measures.
 Third, **adjusted R² falls below R² by only a small margin** (about 0.02),
