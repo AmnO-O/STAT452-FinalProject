@@ -142,7 +142,7 @@ pct_effects <- broom::tidy(ols_step) %>%
   filter(term != "(Intercept)") %>%
   mutate(effect_pct = 100 * (exp(estimate) - 1),
          p_val      = format.pval(p.value, digits = 3, eps = 0.001)) %>%
-  select(term, estimate, p_val, effect_pct)
+  dplyr::select(term, estimate, p_val, effect_pct)
 knitr::kable(pct_effects %>% arrange(desc(effect_pct)),
              digits = 3,
              caption = "Stepwise log-salary model: coefficients and percentage effects (reference: EN / Data Analyst / FT / Small / Other-location)")

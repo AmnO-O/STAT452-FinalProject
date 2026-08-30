@@ -47,7 +47,7 @@ prepare_logit_data <- function(df, q3_val) {
     )
 }
 
-q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
+q3_salary <- as.numeric(quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE))
 train_logit <- prepare_logit_data(train, q3_salary)
 test_logit <- prepare_logit_data(test, q3_salary)
 ```
@@ -57,9 +57,91 @@ test_logit <- prepare_logit_data(test, q3_salary)
 We evaluate our continuous models based on out-of-sample Root Mean Squared Error (RMSE), Mean Absolute Error (MAE), and $R^2$.
 
 ```{r}
-continuous_metrics <- read.csv("task04_model_comparison.csv")
-knitr::kable(continuous_metrics %>% arrange(RMSE_usd), 
+library(glmnet)
+
+# 1. Align factor reference levels to EXACTLY match the training set
+# This prevents the "21 columns" error by keeping empty categories in the test set
+align_factors <- function(df, ref_df) {
+  df$experience_level <- factor(df$experience_level, levels = c("EN", "MI", "SE", "EX"))
+  df$company_size <- factor(df$company_size, levels = c("S", "M", "L"))
+  df$employment_type <- factor(df$employment_type, levels = levels(relevel(factor(ref_df$employment_type), ref = "FT")))
+  df$job_category <- factor(df$job_category, levels = levels(relevel(factor(ref_df$job_category), ref = "Data_Analyst")))
+  df$location_group <- factor(df$location_group, levels = levels(relevel(factor(ref_df$location_group), ref = "Other")))
+  return(df)
+}
+
+train <- align_factors(train, train)
+test <- align_factors(test, train)
+
+# 2. Refit the OLS and Power Models
+f_full <- log_salary ~ experience_level + job_category + employment_type + company_size + location_group + remote_ratio + work_year + is_local
+f_step <- log_salary ~ experience_level + job_category + employment_type + company_size + location_group + remote_ratio + is_local
+
+ols_full <- lm(f_full, data = train)
+ols_step <- lm(f_step, data = train)
+poly_model <- ols_full   # Task 4 confirmed degree 1 (linear) was optimal
+
+lambda_hat <- 0.263
+train$salary_power <- train$salary_in_usd^lambda_hat
+ols_power <- lm(salary_power ~ experience_level + job_category + employment_type + company_size + location_group + remote_ratio + work_year + is_local, data = train)
+
+# 3. Refit the Penalized Models
+# Recreate the scaled variables for the design matrix
+for (col in c("exp_level_ord", "company_size_ord", "remote_ratio", "work_year")) {
+  m <- mean(train[[col]])
+  s <- sd(train[[col]])
+  train[[paste0(col, "_ts")]] <- (train[[col]] - m) / s
+  test[[paste0(col, "_ts")]] <- (test[[col]] - m) / s
+}
+
+build_matrix <- function(df) {
+  model.matrix(~ exp_level_ord_ts + company_size_ord_ts + remote_ratio_ts + work_year_ts + job_category + employment_type + location_group + is_local, data = df)[, -1]
+}
+
+x_train <- build_matrix(train)
+x_test <- build_matrix(test)
+y_train <- train$log_salary
+
+set.seed(2026)
+cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0, nfolds = 10)
+set.seed(2026)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10)
+set.seed(2026)
+cv_elastic <- cv.glmnet(x_train, y_train, alpha = 0.1, nfolds = 10)
+
+# 4. Generate Predictions and Calculate Metrics on the Test Set
+actual_usd <- test$salary_in_usd
+actual_log <- test$log_salary
+
+score_model <- function(name, pred_usd) {
+  pred_log <- log(pred_usd)
+  err_log <- actual_log - pred_log
+  err_usd <- actual_usd - pred_usd
+  
+  data.frame(
+    Model = name,
+    RMSE_log = sqrt(mean(err_log^2)),
+    MAE_log = mean(abs(err_log)),
+    R2_log = 1 - sum(err_log^2)/sum((actual_log - mean(actual_log))^2),
+    RMSE_usd = sqrt(mean(err_usd^2)),
+    MAE_usd = mean(abs(err_usd)),
+    R2_usd = 1 - sum(err_usd^2)/sum((actual_usd - mean(actual_usd))^2)
+  )
+}
+
+continuous_metrics <- do.call(rbind, list(
+  score_model("Multiple linear regression (full)", exp(predict(ols_full, newdata = test))),
+  score_model("Multiple linear regression (stepwise)", exp(predict(ols_step, newdata = test))),
+  score_model("Power-transformed OLS (salary^0.26)", predict(ols_power, newdata = test)^(1/lambda_hat)),
+  score_model("Ridge regression", exp(as.numeric(predict(cv_ridge, newx = x_test, s = "lambda.min")))),
+  score_model("LASSO regression", exp(as.numeric(predict(cv_lasso, newx = x_test, s = "lambda.min")))),
+  score_model("Elastic net regression", exp(as.numeric(predict(cv_elastic, newx = x_test, s = "lambda.min"))))
+))
+
+knitr::kable(continuous_metrics %>% arrange(RMSE_usd), digits = 3,
              caption = "Continuous Regression Models Ranked by USD RMSE")
+
+write.csv(continuous_metrics, "task04_model_comparison.csv", row.names = FALSE)
 ```
 
 ```{r extract_metrics, include=FALSE}
