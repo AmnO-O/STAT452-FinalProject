@@ -142,12 +142,12 @@ By examining the **Odds Ratios (OR)**, where $OR > 1$ indicates increased probab
   `r fmt3(family_yes_or)` / `r fmt3(family_unknown_or)` =
   `r fmt3(family_yes_vs_unknown_or)`.
   Age also has a small, statistically significant positive association
-  ($OR \approx$ `r fmt3(age_or)`, $p = `r fmt3(age_p)`): each additional year is associated with
+  ($OR \approx$ `r fmt3(age_or)`, $p = `r fmt3(age_p)`$): each additional year is associated with
   about `r round((age_or - 1) * 100, 1)`% increase in the odds of seeking treatment, holding the other
   variables constant. Female respondents have significantly higher odds than
-  Male respondents ($OR \approx$ `r fmt3(female_or)`, $p = `r fmt3(female_p)`);
-  the Other category does not significantly differ from Male ($OR \approx
-  `r fmt3(other_or)`, $p = `r fmt3(other_p)`).
+  Male respondents ($OR \approx$ `r fmt3(female_or)`, $p = `r fmt3(female_p)`$);
+  the Other category does not significantly differ from Male ($OR \approx$
+  `r fmt3(other_or)`, $p = `r fmt3(other_p)`$).
 
 - **Workplace Factors Are Not Statistically Significant:** Employer
   mental-health importance, employer physical-health importance, coworker
