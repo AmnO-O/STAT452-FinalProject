@@ -11,7 +11,7 @@
 
 <meta name="author" content="Group 08" />
 
-<meta name="date" content="2026-08-21" />
+<meta name="date" content="2026-08-30" />
 
 <title>Activity 1 — Task 5: Binary Logistic Regression Modeling</title>
 
@@ -1624,7 +1624,7 @@ display: none;
 <h1 class="title toc-ignore">Activity 1 — Task 5: Binary Logistic
 Regression Modeling</h1>
 <h4 class="author">Group 08</h4>
-<h4 class="date">2026-08-21</h4>
+<h4 class="date">2026-08-30</h4>
 
 </div>
 
@@ -1742,16 +1742,77 @@ required <code>&gt;=</code> rule, not a data-cleaning error.</p>
 </div>
 <div id="training-and-testing-partitions" class="section level2">
 <h2>5.2 Training and testing partitions</h2>
-<p>Task 4 uses a year-aware split, so this task keeps all 2020–2021
-records in training and samples 165 records from 2022 for training. The
-remaining 113 2022 records are held out for testing.</p>
+<p>Model quality is judged on observations not seen during fitting, so
+the 565 cleaned records are split into training (80%) and test (20%)
+sets. Salaries evolve over time, so the split leans toward recent data:
+training keeps all 287 records from 2020–2021 plus 165 randomly sampled
+2022 records (452 rows), while the 113-row test set contains only 2022
+records. This is a year-aware, rather than strictly chronological,
+split: approximately three fifths of the 2022 records also inform the
+fit, preserving the intended 80:20 balance.</p>
 <pre class="r"><code>set.seed(2026)
-train_2022_ids &lt;- sample(which(data$work_year == 2022), 165)
-train_ids &lt;- c(which(data$work_year %in% c(2020, 2021)), train_2022_ids)
-train &lt;- data[train_ids, ]
-test &lt;- data[-train_ids, ]
+used_cols &lt;- c(&quot;salary_in_usd&quot;, &quot;experience_level&quot;, &quot;employment_type&quot;,
+               &quot;company_size&quot;, &quot;job_category&quot;, &quot;location_group&quot;, &quot;remote_ratio&quot;,
+               &quot;work_year&quot;, &quot;is_top_tier&quot;)
+stopifnot(nrow(data) == 565,
+          sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
+
+train_old &lt;- data %&gt;% filter(work_year %in% c(2020, 2021))  # 287 older records
+pool_2022 &lt;- data %&gt;% filter(work_year == 2022)             # 278 recent records
+
+check_vars &lt;- c(&quot;employment_type&quot;, &quot;job_category&quot;, &quot;location_group&quot;,
+                &quot;experience_level&quot;, &quot;company_size&quot;)
+
+repeat {
+  idx &lt;- sample(nrow(pool_2022), 165)
+  tr22 &lt;- pool_2022[idx, ]
+  te &lt;- pool_2022[-idx, ]
+  tr &lt;- bind_rows(train_old, tr22)
+  ok &lt;- all(vapply(check_vars,
+                   function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
+  if (ok) break
+}
+
+train &lt;- tr
+test &lt;- te
 
 stopifnot(nrow(train) == 452, nrow(test) == 113, all(test$work_year == 2022))</code></pre>
+<p>The draw is checked so that rare categories (contract and freelance
+employment have 5 and 4 records dataset-wide) stay represented in
+training. The fixed seed makes the split fully reproducible and prevents
+prediction failures from unseen factor levels.</p>
+<pre class="r"><code>table(train$work_year);        table(test$work_year)</code></pre>
+<pre><code>## 
+## 2020 2021 2022 
+##   72  215  165</code></pre>
+<pre><code>## 
+## 2022 
+##  113</code></pre>
+<pre class="r"><code>table(train$experience_level); table(test$experience_level)</code></pre>
+<pre><code>## 
+##  EN  EX  MI  SE 
+##  80  22 168 182</code></pre>
+<pre><code>## 
+## EN EX MI SE 
+##  8  4 40 61</code></pre>
+<pre class="r"><code>table(train$job_category);     table(test$job_category)</code></pre>
+<pre><code>## 
+##    Data_Analyst   Data_Engineer  Data_Scientist Management_Lead  ML_AI_Engineer 
+##              76             115             120              50              65 
+##           Other        Research 
+##              12              14</code></pre>
+<pre><code>## 
+##    Data_Analyst   Data_Engineer  Data_Scientist Management_Lead  ML_AI_Engineer 
+##              25              36              23               8              16 
+##           Other        Research 
+##               3               2</code></pre>
+<pre class="r"><code>table(train$employment_type);  table(test$employment_type)</code></pre>
+<pre><code>## 
+##  CT  FL  FT  PT 
+##   4   4 434  10</code></pre>
+<pre><code>## 
+##  CT  FT 
+##   1 112</code></pre>
 </div>
 <div id="predictor-preparation-and-model-fitting" class="section level2">
 <h2>5.3 Predictor preparation and model fitting</h2>
@@ -2283,7 +2344,7 @@ generalization capability.</p>
 head(test_predictions[c(&quot;row_id&quot;, &quot;is_top_tier&quot;, &quot;predicted_probability&quot;, &quot;predicted_class&quot;)])</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["row_id"],"name":[1],"type":["int"],"align":["right"]},{"label":["is_top_tier"],"name":[2],"type":["int"],"align":["right"]},{"label":["predicted_probability"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["predicted_class"],"name":[4],"type":["int"],"align":["right"]}],"data":[{"1":"293","2":"1","3":"0.170068595","4":"0","_rn_":"293"},{"1":"294","2":"1","3":"0.170068595","4":"0","_rn_":"294"},{"1":"296","2":"0","3":"0.200696700","4":"0","_rn_":"296"},{"1":"297","2":"0","3":"0.593370880","4":"1","_rn_":"297"},{"1":"298","2":"0","3":"0.593370880","4":"1","_rn_":"298"},{"1":"303","2":"0","3":"0.001514712","4":"0","_rn_":"303"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["row_id"],"name":[1],"type":["int"],"align":["right"]},{"label":["is_top_tier"],"name":[2],"type":["int"],"align":["right"]},{"label":["predicted_probability"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["predicted_class"],"name":[4],"type":["int"],"align":["right"]}],"data":[{"1":"293","2":"1","3":"0.170068595","4":"0","_rn_":"6"},{"1":"294","2":"1","3":"0.170068595","4":"0","_rn_":"7"},{"1":"296","2":"0","3":"0.200696700","4":"0","_rn_":"9"},{"1":"297","2":"0","3":"0.593370880","4":"1","_rn_":"10"},{"1":"298","2":"0","3":"0.593370880","4":"1","_rn_":"11"},{"1":"303","2":"0","3":"0.001514712","4":"0","_rn_":"16"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 </div>
@@ -2326,10 +2387,10 @@ wider confidence intervals in the training data.</p>
 summarize in-sample fit on the 452 training observations. To assess
 whether the model’s learned associations generalize to new 2022 data,
 the fitted model is applied to the held-out test set (113 records from
-2022). The training-test split strategy (temporal: 2020–2021 in
-training, 2022 in testing) helps protect against over-optimistic
-performance claims and evaluates the model’s ability to predict top-tier
-status for unobserved records from the most recent year in the data.</p>
+2022). The training-test split strategy (Year-aware split) helps protect
+against over-optimistic performance claims and evaluates the model’s
+ability to predict top-tier status for unobserved records from the most
+recent year in the data.</p>
 <p>The test-set predictions and their corresponding classification
 metrics are computed in the section above. These out-of-sample
 evaluations, including accuracy, sensitivity, specificity, ROC-AUC, and
