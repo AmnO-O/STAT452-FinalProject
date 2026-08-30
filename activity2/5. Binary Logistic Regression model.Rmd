@@ -1,0 +1,141 @@
+---
+title: 'Activity 2 — Task 5: Binary Logistic Regression Modeling'
+author: "Group 08"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = ".")
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# 5 Binary Logistic Regression Modeling
+
+## 5.1 Research Question and Data Preparation
+
+This final task addresses the third research question for Activity 2: **Which personal factors (age, gender, family history) and environmental factors (employer prioritization, coworker reactions) increase or decrease the probability of an employee seeking professional mental health treatment? How accurately can a model classify those who need treatment?**
+
+Because the target variable (`Treatment_Cat`) is binary (Yes/No), we employ a Binary Logistic Regression model.
+
+To maintain strict comparability with the continuous regression analysis, we utilize the exact same globally randomized 80:20 split (seed 2026).
+
+```{r}
+library(tidyverse)
+library(caret)
+library(pROC)
+library(broom)
+
+data <- read.csv("dataset/osmi_clean_combined.csv")
+
+# Ensure reference levels are set logically for interpretation
+data <- data %>%
+  mutate(
+    Treatment_Cat = factor(Treatment_Cat, levels = c("No", "Yes")),
+    Gender_Category = relevel(factor(Gender_Category), ref = "Male"),
+    Family_History = relevel(factor(Family_History), ref = "No"),
+    Tech_Company_Cat = relevel(factor(Tech_Company_Cat), ref = "No")
+  )
+
+set.seed(2026)
+train_idx <- sample(nrow(data), floor(0.8 * nrow(data)))
+train <- data[train_idx, ]
+test  <- data[-train_idx, ]
+
+cat("Training cases:", nrow(train), "| Test cases:", nrow(test), "\n")
+```
+
+## 5.2 Model Fitting and Odds Ratios
+
+We fit the logistic regression model on the training set using both demographic and corporate environment predictors.
+
+```{r}
+logit_model <- glm(
+  Treatment_Cat ~ Age + Gender_Category + Family_History + 
+    Employer_Mental_Importance + Employer_Phys_Importance + 
+    Coworker_Reaction_Score + Tech_Company_Cat,
+  family = binomial(link = "logit"),
+  data = train
+)
+
+# Extract Odds Ratios (OR) and Confidence Intervals
+model_matrix <- summary(logit_model)$coefficients
+wald_ci <- confint.default(logit_model)
+
+odds_ratios <- tibble(
+  Predictor = rownames(model_matrix),
+  Estimate = model_matrix[, "Estimate"],
+  `Odds Ratio (OR)` = exp(Estimate),
+  `P-value` = model_matrix[, "Pr(>|z|)"],
+  Significant = `P-value` < 0.05
+) %>%
+  filter(Predictor != "(Intercept)") %>%
+  mutate(
+    across(c(Estimate, `Odds Ratio (OR)`), ~ round(.x, 3)),
+    `P-value` = format.pval(`P-value`, digits = 3, eps = 0.001)
+  )
+
+knitr::kable(odds_ratios, caption = "Adjusted Odds Ratios for Seeking Treatment")
+```
+
+### What drives the decision to seek treatment?
+
+By examining the **Odds Ratios (OR)**, where $OR > 1$ indicates increased probability and $OR < 1$ indicates decreased probability, we uncover a fascinating divide between personal and environmental factors:
+
+- **Personal Family History Dominates:** The strongest predictor by a massive margin is personal biology. Employees with a known family history of mental illness have incredibly high odds of seeking treatment compared to those without. Age also shows a slight, statistically significant positive correlation ($OR = 1.024$, $p = 0.013$). However, unlike our initial hypothesis, **Gender does not play a significant role** ($p > 0.05$ for all gender contrasts).
+
+- **Environmental Factors are Weak:** Surprisingly, workplace variables have almost zero impact on the individual's decision to seek clinical help. The importance the employer places on mental/physical health, the tech-company status, and even the coworker reaction score all yielded non-significant p-values.
+
+In short: **The decision to seek professional treatment is driven primarily by family history and age, not by corporate policy or gender.**
+
+## 5.3 Out-of-Sample Classification Performance
+
+To answer the second half of the research question ("How accurately can the model classify?"), we apply the fitted model to the 211 unseen records in the test set.
+
+```{r}
+# Generate probabilities and classes on the Test Set
+test_probs <- predict(logit_model, newdata = test, type = "response")
+test_preds <- factor(ifelse(test_probs >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+actual_class <- test$Treatment_Cat
+
+# Confusion Matrix
+conf_matrix <- confusionMatrix(test_preds, actual_class, positive = "Yes")
+print(conf_matrix$table)
+
+# Extract Metrics for inline text
+acc_val <- conf_matrix$overall["Accuracy"]
+prec_val <- conf_matrix$byClass["Pos Pred Value"]
+rec_val <- conf_matrix$byClass["Sensitivity"]
+
+# ROC and AUC
+roc_curve <- roc(actual_class, test_probs)
+auc_value <- as.numeric(auc(roc_curve))
+
+cat("\nAccuracy: ", round(acc_val, 3))
+cat("\nPrecision:", round(prec_val, 3))
+cat("\nRecall:   ", round(rec_val, 3))
+cat("\nROC-AUC:  ", round(auc_value, 3), "\n")
+
+plot(roc_curve, col = "firebrick", lwd = 2, 
+     main = paste("ROC Curve (Test Set) - AUC =", round(auc_value, 3)))
+```
+
+### Conclusion for Research Question 3
+
+The model successfully identifies whether an employee will seek professional mental health treatment with an overall **Accuracy of `r round(acc_val * 100, 1)`%** on completely unseen data.
+
+More importantly, the **ROC-AUC score is `r round(auc_value, 3)`**. This means that if we randomly select one employee who sought treatment and one who did not, the model has an `r round(auc_value * 100, 1)`% probability of correctly ranking the treatment-seeker with a higher risk score.
+
+The precision (`r round(prec_val, 3)`) and recall (`r round(rec_val, 3)`) demonstrate a well-balanced classifier that doesn't just guess "Yes" for everyone.
+
+**Final Answer:** We can classify treatment-seekers with high accuracy ($\approx$ `r round(acc_val * 100, 1)`%). The analysis proves that the decision to seek treatment is profoundly driven by **personal biology and age** (specifically family history and age), while corporate environmental factors (like supportive coworkers or HR policies) and gender fail to statistically alter an employee's underlying probability of seeking professional medical care.

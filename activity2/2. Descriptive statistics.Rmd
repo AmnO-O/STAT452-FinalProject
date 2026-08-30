@@ -1,0 +1,298 @@
+---
+title: "Activity 2 - Task 2: Descriptive Statistics"
+author: "Group 08"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = ".")
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+# 2 Descriptive Statistics
+## 2.1 Dataset Overview
+
+### 2.1.1 Purpose and scope
+
+This report describes the cleaned combined dataset, `osmi_clean_combined.csv`, created in Task 1. It combines the Open Sourcing Mental Illness (OSMI) workplace mental-health surveys from **2018 to 2022**. Each row represents one survey respondent who remained after removing duplicate records, records missing the key employer variables, and implausible ages.
+
+The dataset is used to examine employee mental-health treatment and workplace perceptions in the technology industry. The main outcome is whether a respondent sought professional mental-health treatment. The descriptive statistics below summarize respondent demographics, employer characteristics, perceptions of workplace support, and their relationships with treatment status.
+
+### 2.1.2 Load data and prepare analysis variables
+
+```{r libraries}
+library(tidyverse)
+library(scales)
+library(knitr)
+```
+
+```{r load-data}
+data <- read.csv(
+  "dataset/osmi_clean_combined.csv",
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+# Convert analysis categories to ordered/labelled factors.
+data <- data %>%
+  mutate(
+    Year = factor(Year, levels = 2018:2022),
+    Gender_Category = factor(Gender_Category,
+                             levels = c("Female", "Male", "Other")),
+    Treatment_Cat = factor(Treatment_Cat, levels = c("No", "Yes")),
+    Tech_Company_Cat = factor(Tech_Company_Cat, levels = c("No", "Yes")),
+    Family_History = factor(Family_History,
+                            levels = c("No", "Yes", "I don't know"))
+  )
+
+cat("Number of respondents:", nrow(data), "\n")
+cat("Number of variables:", ncol(data), "\n")
+```
+
+## 2.2 Data Quality and Variable Description
+
+### 2.2.1 Missing values
+
+The cleaned data contain no missing values. This is expected because the preprocessing stage removed records with missing key employer measures and the exported dataset was verified before use in this report.
+
+```{r missing-values}
+missing_summary <- tibble(
+  Variable = names(data),
+  Missing = colSums(is.na(data)),
+  Percent_Missing = percent(colMeans(is.na(data)), accuracy = 0.1)
+)
+
+kable(missing_summary, caption = "Missing values in the cleaned dataset")
+```
+
+### 2.2.2 Analysis variables
+
+The cleaned file also includes raw text responses, dummy variables, and standardized versions of selected numeric variables for later modeling. To avoid reporting the same construct multiple times, the descriptive analysis uses the original-scale measures and normalized categorical variables below.
+
+```{r data-dictionary}
+data_dictionary <- tribble(
+  ~Variable, ~Type, ~Description,
+  "Age", "Numeric", "Respondent age in years (cleaned range: 18-65).",
+  "Gender_Category", "Categorical", "Normalized gender category: Female, Male, or Other.",
+  "Treatment_Cat", "Binary categorical", "Whether the respondent sought professional mental-health treatment.",
+  "Tech_Company_Cat", "Binary categorical", "Whether the respondent's employer is primarily a technology company.",
+  "Employer_Phys_Importance", "Numeric (0-10)", "Employer importance placed on physical health.",
+  "Employer_Mental_Importance", "Numeric (0-10)", "Employer importance placed on mental health.",
+  "Coworker_Reaction_Score", "Numeric (0-10)", "Expected reaction of coworkers to a mental-health condition.",
+  "Industry_Support_Rating", "Ordinal numeric (1-5)", "Perceived support for employees with mental illness in the tech industry.",
+  "Family_History", "Categorical", "Whether the respondent reports a family history of mental illness.",
+  "Year", "Categorical", "Survey year, 2018 through 2022."
+)
+
+kable(data_dictionary, caption = "Variables used in the descriptive analysis")
+```
+
+## 2.3 Numerical Variables
+
+### 2.3.1 Summary statistics
+
+Age is centered around the mid-thirties. On the 0-10 workplace scales, employers are rated somewhat higher for physical-health importance than mental-health importance. The industry-support rating uses a 1-5 scale and is generally lower than the workplace importance scores, suggesting more reserved perceptions of industry-wide support.
+
+```{r numeric-summary}
+numeric_vars <- c(
+  "Age", "Employer_Phys_Importance", "Employer_Mental_Importance",
+  "Coworker_Reaction_Score", "Industry_Support_Rating"
+)
+
+numeric_summary <- data %>%
+  summarise(
+    across(
+      all_of(numeric_vars),
+      list(
+        N = ~sum(!is.na(.)),
+        Mean = ~mean(.),
+        SD = ~sd(.),
+        Min = ~min(.),
+        Q1 = ~quantile(., 0.25),
+        Median = ~median(.),
+        Q3 = ~quantile(., 0.75),
+        Max = ~max(.)
+      ),
+      .names = "{.col}__{.fn}"
+    )
+  ) %>%
+  pivot_longer(
+    everything(),
+    names_to = c("Variable", ".value"),
+    names_sep = "__"
+  ) %>%
+  mutate(across(-Variable, ~round(., 2)))
+
+kable(numeric_summary, caption = "Descriptive statistics for numeric variables")
+```
+
+### 2.3.2 Distributions of numeric variables
+
+```{r numeric-plots, fig.width=10, fig.height=7}
+numeric_long <- data %>%
+  select(all_of(numeric_vars)) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value")
+
+ggplot(numeric_long, aes(x = Value)) +
+  geom_histogram(bins = 20, fill = "skyblue", color = "white") +
+  facet_wrap(~Variable, scales = "free") +
+  theme_minimal() +
+  labs(
+    title = "Distributions of Numeric Variables",
+    x = "Value", y = "Number of respondents"
+  )
+```
+
+## 2.4 Categorical Variables
+
+### 2.4.1 Frequency distributions
+
+The sample contains more male than female respondents, and most respondents work for a technology company. A modest majority report having sought treatment. Respondents reporting a family history of mental illness form the largest family-history group.
+
+```{r categorical-summary}
+categorical_vars <- c(
+  "Year", "Gender_Category", "Treatment_Cat", "Tech_Company_Cat", "Family_History"
+)
+
+categorical_summary <- data %>%
+  select(all_of(categorical_vars)) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Category") %>%
+  count(Variable, Category, name = "Frequency") %>%
+  group_by(Variable) %>%
+  mutate(Percent = percent(Frequency / sum(Frequency), accuracy = 0.1)) %>%
+  ungroup()
+
+kable(categorical_summary, caption = "Frequency distributions of categorical variables")
+```
+
+### 2.4.2 Treatment status by survey year
+
+```{r treatment-by-year, fig.width=8, fig.height=5}
+treatment_by_year <- data %>%
+  count(Year, Treatment_Cat) %>%
+  group_by(Year) %>%
+  mutate(Percent = n / sum(n)) %>%
+  ungroup()
+
+kable(
+  treatment_by_year %>% mutate(Percent = percent(Percent, accuracy = 0.1)),
+  caption = "Treatment status by survey year"
+)
+
+ggplot(treatment_by_year, aes(x = Year, y = Percent, fill = Treatment_Cat)) +
+  geom_col(position = "fill") +
+  scale_y_continuous(labels = percent_format()) +
+  scale_fill_manual(values = c("No" = "grey70", "Yes" = "steelblue")) +
+  theme_minimal() +
+  labs(
+    title = "Treatment Status by Survey Year",
+    x = "Survey year", y = "Percentage of respondents", fill = "Sought treatment"
+  )
+```
+
+## 2.5 Treatment and Key Characteristics
+
+### 2.5.1 Treatment by respondent characteristics
+
+The following tables report within-group treatment percentages. They are descriptive only and do not establish causal relationships.
+
+```{r treatment-crosstabs}
+treatment_table <- function(group_var) {
+  data %>%
+    count(.data[[group_var]], Treatment_Cat, name = "Frequency") %>%
+    group_by(.data[[group_var]]) %>%
+    mutate(Percent = percent(Frequency / sum(Frequency), accuracy = 0.1)) %>%
+    ungroup() %>%
+    rename(Group = 1)
+}
+
+treatment_by_gender <- treatment_table("Gender_Category")
+treatment_by_family <- treatment_table("Family_History")
+treatment_by_tech <- treatment_table("Tech_Company_Cat")
+
+kable(treatment_by_gender, caption = "Treatment status within gender category")
+kable(treatment_by_family, caption = "Treatment status within family-history category")
+kable(treatment_by_tech, caption = "Treatment status by technology-company status")
+```
+
+### 2.5.2 Workplace scores by treatment status
+
+```{r scores-by-treatment}
+scores_by_treatment <- data %>%
+  group_by(Treatment_Cat) %>%
+  summarise(
+    Respondents = n(),
+    across(
+      all_of(c("Age", "Employer_Phys_Importance", "Employer_Mental_Importance",
+               "Coworker_Reaction_Score", "Industry_Support_Rating")),
+      list(Mean = ~round(mean(.), 2), SD = ~round(sd(.), 2)),
+      .names = "{.col}_{.fn}"
+    ),
+    .groups = "drop"
+  )
+
+kable(scores_by_treatment, caption = "Mean (SD) profiles by treatment status")
+
+ggplot(
+  data %>%
+    pivot_longer(
+      c(Employer_Phys_Importance, Employer_Mental_Importance,
+        Coworker_Reaction_Score, Industry_Support_Rating),
+      names_to = "Measure", values_to = "Score"
+    ),
+  aes(x = Treatment_Cat, y = Score, fill = Treatment_Cat)
+) +
+  geom_boxplot(alpha = 0.75, outlier.alpha = 0.25) +
+  facet_wrap(~Measure, scales = "free_y") +
+  scale_fill_manual(values = c("No" = "grey70", "Yes" = "steelblue")) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(
+    title = "Workplace Perception Scores by Treatment Status",
+    x = "Sought treatment", y = "Score"
+  )
+```
+
+## 2.6 Associations Among Numeric Measures
+
+The correlation matrix uses Pearson correlations. Physical- and mental-health importance ratings have the strongest positive association; other workplace perception measures are also positively related, while age has little linear association with the workplace ratings.
+
+```{r correlation-matrix}
+correlation_matrix <- data %>%
+  select(all_of(numeric_vars)) %>%
+  cor(use = "complete.obs") %>%
+  round(2)
+
+kable(correlation_matrix, caption = "Pearson correlation matrix for numeric variables")
+```
+
+```{r physical-mental-scatter, fig.width=7, fig.height=5}
+ggplot(
+  data,
+  aes(x = Employer_Phys_Importance, y = Employer_Mental_Importance)
+) +
+  geom_jitter(width = 0.15, height = 0.15, alpha = 0.25, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "firebrick") +
+  theme_minimal() +
+  labs(
+    title = "Employer Physical- and Mental-Health Importance",
+    x = "Physical-health importance (0-10)",
+    y = "Mental-health importance (0-10)"
+  )
+```
+
+## 2.7 Summary
+
+The cleaned analytical sample contains **`r nrow(data)` respondents** surveyed between 2018 and 2022, with no remaining missing values. Respondents have a mean age of **`r round(mean(data$Age), 1)` years**. **`r percent(mean(data$Treatment_Cat == 'Yes'), accuracy = 0.1)`** reported seeking professional mental-health treatment, and **`r percent(mean(data$Tech_Company_Cat == 'Yes'), accuracy = 0.1)`** worked for a primarily technology-focused company.
+
+Employer physical-health importance was rated higher on average than employer mental-health importance. Perceived industry support was comparatively modest on its 1-5 scale. These summaries provide the baseline profile for subsequent inferential or predictive analyses.

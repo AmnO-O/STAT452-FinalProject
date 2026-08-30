@@ -113,7 +113,8 @@ repeat {
 train <- tr
 test <- te
 
-stopifnot(nrow(train) == 452, nrow(test) == 113, all(test$work_year == 2022))
+stopifnot(nrow(train) == 452, nrow(test) == 113,
+          all(!test$row_id %in% train$row_id))
 ```
 
 The draw is checked so that rare categories (contract and freelance employment
@@ -377,9 +378,21 @@ head(test_predictions[c("row_id", "is_top_tier", "predicted_probability", "predi
 
 ### 5.7.1 Training Set Findings
 
-The odds-ratio table is estimated from the 452 training observations (all 2020–2021 records plus a random sample of 165 from 2022). Each odds ratio compares one category with its reference category while holding the other predictors constant. The reference profile is entry-level (EN), small-company (S), 0% remote work, Data Analyst, full-time employment, and a non-US company location. For example, an odds ratio of about 26.4 for US company location means that the estimated odds of being top-tier are 26.4 times those for a comparable non-US company, not that salary itself multiplies by this factor.
+The odds-ratio table is estimated from the 452 training observations selected
+by the seeded global random split. Each odds ratio compares one category with
+its reference category while holding the other predictors constant. The
+reference profile is entry-level (EN), small-company (S), 0% remote work, Data
+Analyst, full-time employment, and a non-US company location. For example, an
+odds ratio above 1 for US company location means that the estimated odds of
+being top-tier are higher than those for a comparable non-US company, not that
+salary itself multiplies by this factor.
 
-Interpret the printed table using these comparison groups. In this fitted model, the statistically significant positive associations on the training data include senior and executive experience, large company size, several technical or management job categories, and US company location. Notably, the odds ratio for executive-level experience is extraordinarily high (over 253), although its wide confidence interval suggests some instability due to a small sample size in this specific sub-group. Other strong predictors include Senior level (OR $\approx$ 30.8) and ML/AI Engineer roles (OR $\approx$ 20.6) compared to entry-level Data Analysts.
+Interpret the printed table using these comparison groups. In this fitted
+model, the statistically significant positive associations on the training data
+include senior and executive experience, large company size, several technical
+or management job categories, and US company location. Estimates for small
+sub-groups should be treated cautiously because their wider confidence
+intervals show greater instability.
 
 These are adjusted associations observed in the training data, not causal salary effects. The model contains no interaction terms, so each coefficient describes an average association under the model's additive assumption. A non-significant coefficient on the training set does not prove that a characteristic has no effect; it simply indicates a lack of statistically significant evidence at the 5% level in the training sample. Estimates for the non-full-time and 50% remote-work groups should be treated cautiously because their smaller sample sizes produce wider confidence intervals in the training data.
 
