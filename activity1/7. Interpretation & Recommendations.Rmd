@@ -1,8 +1,13 @@
 ---
 title: "Activity 1 — Task 7: Interpretation and Recommendations"
 author: "Group 08"
-date: "2026-08-22"
+date: "2026-08-30"
 output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: paged
   pdf_document:
     latex_engine: xelatex
     toc: true
@@ -13,16 +18,312 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_knit$set(root.dir = ".")
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
-```{r}
+This task closes the modeling loop of Activity 1. Task 6 already selected a
+"best" model for each research question; here we do two things the requirement
+asks for. First, we interpret which features actually drive Data Science pay
+(§7.1) and check whether the three independent methods used — continuous
+regression, binary logistic regression, and factorial ANOVA — agree on the same
+drivers. Second, we propose concrete avenues for improving predictive
+performance (§7.2), each grounded in a limitation that our own model outputs
+exposed rather than in generic machine-learning advice.
+
+We deliberately reuse the exact partitions, encodings, and results of Tasks 3–6.
+No model is re-evaluated on the held-out test set here beyond what Tasks 4–6
+already did; the recommender narrative below simply reads the numbers that our
+own fitted models produced.
+
+```{r load}
 library(tidyverse)
-data <- read.csv("dataset/ds_salaries_clean.csv")
+library(broom)
+library(knitr)
+
+data  <- read.csv("dataset/ds_salaries_clean.csv")
+train <- read.csv("dataset/train_data.csv")
+test  <- read.csv("dataset/test_data.csv")
+cmp   <- read.csv("task04_model_comparison.csv")
 ```
 
 # 7 Interpretation and Recommendations
 
 ## 7.1 Feature importance interpretation
 
+### 7.1.1 One model to predict, one model to interpret
+
+Task 6 chose the **Ridge regression** as the best continuous predictor on the
+held-out test set (the Box–Cox power model finished a hair behind), and the
+**binary logistic model** as the best classifier for the top-25% target. The
+Ridge winner achieves its accuracy by shrinking coefficients and therefore has
+no clean coefficient table to read. For feature-importance interpretation we
+deliberately read its in-sample sibling: the **log-salary regression** selected
+by AIC stepwise in Task 4 (§4.2). Its coefficients translate directly into
+percentage effects via $100(e^{\hat\beta}-1)$ — a view that neither the Ridge
+winner nor the power model offers on their respective penalized and
+$\text{salary}^{0.26}$ scales. Ridge and the stepwise OLS share the same
+predictors and the same training records, so reading the stepwise table for
+substance does not change the story.
+
+The context table from Task 6 is repeated here so every number cited below is
+traceable:
+
+```{r metrics-recap}
+knitr::kable(cmp %>% arrange(RMSE_usd),
+             caption = "Continuous candidates ranked by out-of-sample USD RMSE (Task 6)")
+
+logistic_metrics <- tibble(
+  Metric  = c("Accuracy", "Precision", "Recall (Sensitivity)", "F1-Score", "ROC-AUC"),
+  Value   = c(0.761, 0.533, 0.552, 0.542, 0.812)
+)
+knitr::kable(logistic_metrics,
+             caption = "Out-of-sample classification metrics of the logistic model (Task 6)")
+```
+
+### 7.1.2 Recovering the driver tables
+
+To interpret the selected models we refit them *on the same training partition
+that Tasks 4 and 6 used* (452 rows, seed 2026) and reconstruct the two tables
+that the interpretation builds on: the percentage effects of the stepwise
+log-salary model and the odds ratios of the logistic model.
+
+```{r refit-continuous, echo=TRUE}
+# Reproduce the Task 4 factor reference levels
+train$experience_level <- factor(train$experience_level, levels = c("EN", "MI", "SE", "EX"))
+train$company_size     <- factor(train$company_size,     levels = c("S", "M", "L"))
+train$employment_type  <- relevel(factor(train$employment_type), ref = "FT")
+train$job_category     <- relevel(factor(train$job_category),   ref = "Data_Analyst")
+train$location_group   <- relevel(factor(train$location_group), ref = "Other")
+
+ols_full <- lm(log_salary ~ experience_level + job_category + employment_type +
+                 company_size + location_group + remote_ratio + work_year + is_local,
+               data = train)
+ols_step <- step(ols_full, direction = "both", trace = FALSE)   # Task 4's $4.2 model
+
+pct_effects <- broom::tidy(ols_step) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(effect_pct = 100 * (exp(estimate) - 1),
+         p_val      = format.pval(p.value, digits = 3, eps = 0.001)) %>%
+  select(term, estimate, p_val, effect_pct)
+knitr::kable(pct_effects %>% arrange(desc(effect_pct)),
+             digits = 3,
+             caption = "Stepwise log-salary model: coefficients and percentage effects (reference: EN / Data Analyst / FT / Small / Other-location)")
+```
+
+```{r refit-logistic, echo=TRUE}
+q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)   # $150,000
+
+prepare_logit <- function(df) {
+  df %>%
+    mutate(
+      is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L),
+      experience_level = factor(experience_level, levels = c("EN", "MI", "SE", "EX")),
+      company_size = factor(company_size, levels = c("S", "M", "L")),
+      remote_ratio = factor(remote_ratio, levels = c(0, 50, 100)),
+      job_category = relevel(factor(job_category), ref = "Data_Analyst"),
+      employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"),
+                                levels = c("FT", "Non_FT")),
+      company_location_group = factor(if_else(location_group == "US", "US", "Non_US"),
+                                      levels = c("Non_US", "US"))
+    )
+}
+train_li <- prepare_logit(train)
+
+logit <- glm(is_top_tier ~ experience_level + company_size + remote_ratio +
+               job_category + employment_group + company_location_group,
+             family = binomial(link = "logit"), data = train_li)
+
+or_table <- tibble(
+  term      = rownames(summary(logit)$coefficients),
+  estimate  = summary(logit)$coefficients[, "Estimate"],
+  odds_ratio = exp(estimate),
+  p_val     = summary(logit)$coefficients[, "Pr(>|z|)"]
+) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(odds_ratio = round(odds_ratio, 2),
+         p_val      = format.pval(p_val, digits = 3, eps = 0.001))
+knitr::kable(or_table,
+             caption = "Logistic model: coefficients and odds ratios for top-25% salary (reference: EN / Data Analyst / FT / Small / non-US)")
+
+cat("Class balance, training:", table(train_li$is_top_tier),
+    "| McFadden R2:", round(1 - logit$deviance / logit$null.deviance, 3), "\n")
+```
+
+### 7.1.3 Cross-method agreement on the key drivers
+
+The three independent methods — log-scale percentage effects, logistic odds
+ratios, and the heteroskedasticity-robust ANOVA from Task 3 — are collected in
+the table below. Asterisks mark estimates significant at the 5% level in their
+own model.
+
+```{r agreement-table}
+agreement <- tribble(
+  ~Driver,                                  ~"Regression (% vs ref)", ~`Logistic OR`,   ~`Robust ANOVA (Task 3)`,
+  "Experience: Mid (MI)",                   "+24%*",                    "n.s.",          "main effect",
+  "Experience: Senior (SE)",                "+65%*",                    "18.0*",         "p < 0.001*",
+  "Experience: Executive (EX)",             "+157%*",                   "137.5*",        "(all levels)",
+  "Company location: US",                   "+155%*",                   "19.1*",         "not in ANOVA",
+  "Residence match (is_local)",             "+51%*",                    "not in model",  "not in ANOVA",
+  "Job: Data Engineer",                     "+33%*",                    "6.8*",          "not in ANOVA",
+  "Job: Data Scientist",                    "+39%*",                    "6.1*",          "not in ANOVA",
+  "Job: ML / AI Engineer",                  "+50%*",                    "20.2*",         "not in ANOVA",
+  "Job: Management / Lead",                 "+59%*",                    "11.0*",         "not in ANOVA",
+  "Job: Research",                          "+70%*",                    "13.6*",         "not in ANOVA",
+  "Company size: Medium (M)",               "+17%*",                    "3.3*",          "n.s. (robust p = 0.19)",
+  "Company size: Large (L)",                "+35%*",                    "6.7*",          "n.s. (robust p = 0.19)",
+  "Employment: Part-time",                  "-67%*",                    "grouped (n.s.)","not in ANOVA",
+  "Employment: Freelance",                  "-66%*",                    "grouped (n.s.)","not in ANOVA",
+  "Remote ratio",                           "retained (n.s.)",          "n.s.",          "not in ANOVA",
+  "Work year",                              "dropped (n.s.)",           "n.s.",          "2022 surge* (unadjusted)"
+)
+knitr::kable(agreement,
+             caption = "Cross-method agreement on salary drivers. * = significant at 5% within that model; n.s. = not significant; grouping of sparse employment categories follows Task 5; is_local (residence matches employer country) is part of the Task 4 regression but not of the logistic or ANOVA designs.")
+```
+
+Three conclusions stand out from the table.
+
+**Experience level is the dominant driver of pay.** In the regression, moving
+from entry-level to mid pays roughly +24%, to senior +65%, and to executive
++157% — a steep, monotone gradient. The logistic model agrees: senior and
+executive levels raise the odds of top-25% pay by 18- and 137-fold relative to
+entry level. The robust ANOVA agrees as well, confirming experience as the
+strongest factor ($p < 0.001$) *after* heteroskedasticity is corrected, while
+every other tested effect weakens or disappears. The executive estimates carry
+very wide confidence intervals (the OR of 137.5 has a 95% interval from about
+17 to 1,084) because few executive observations exist; they are best read as
+"very large" rather than taken literally.
+
+**Geography is the second major driver, and it is structural.** A US-based
+employer is worth roughly +155% in salary — the single largest coefficient in
+the model — with Canada (+88%), Germany (+68%), Great Britain (+69%) and France
+(+37%) forming a clear second tier and India about −52% below the rest-of-world
+baseline. The logistic model captures the same fact in coarse form: US location
+multiplies the odds of a top-25% salary by about 19. A related new signal
+emerged once `is_local` entered the regression: being employed where you live is
+worth roughly **+51%** over an otherwise identical posting at an overseas
+employer — consistent with the cross-country gap being structural rather than an
+artifact of which countries happen to appear in the sample. The size of these
+effects is what a country-level dummy can capture; they almost certainly bundle
+together several things (local wage levels, cost of living, tax regimes,
+seniority mixes) that a finer data set could split apart.
+
+**Role family matters, within the field.** Against the Data-Analyst baseline,
+engineering (+33%) and data science (+39%) pay moderately more, while
+machine-learning/AI (+50%), management (+59%) and research (+70%) pay
+substantially more. The logistic odds ratios replicate the same ordering
+(6.1–20.2). The heterogeneous "Other" bucket is significant in the logistic
+model but not in the regression — the two methods simply disagree about a
+catch-all category with no economic meaning, which is itself a reason to refine
+the grouping rather than trust either verdict.
+
+**The remaining factors are secondary and the methods diverge on company
+size.** Regression and logistic both find significant, positive company-size
+contrasts (medium +17%, large +35%; OR 3.3 and 6.7), yet the robust ANOVA finds
+company size *not* significant once unequal variances are corrected
+(p = 0.19) and the medium-size contrast is only borderline under the
+regression's own robust errors (p = 0.083). Part-time (−67%) and freelance
+(−66%) salaries are clearly penalized, but these rest on 10 and 4 records
+respectively, and in the logistic model the folded "non-full-time" group is not
+significant at all. Remote work ratio and survey year, significant in isolation
+(the 2022 surge from Task 3), carry no stable incremental signal once the other
+factors are held constant — stepwise dropped the survey year (keeping
+`remote_ratio`, itself insignificant), and LASSO shrank the year component to
+exactly zero.
+
+### 7.1.4 Where the methods disagree
+
+The one genuine disagreement is Company Size, and it is *structural* rather
+than economic. Task 3 showed that the unadjusted two-way ANOVA finds a
+significant experience-by-size interaction (p = 0.008) which evaporates under
+the heteroskedasticity-robust correction (p = 0.13), while the size main effect
+also loses significance (p = 0.19). Yet the regression and logistic models,
+fitted on the same data with robust training of their own, still report
+significant size coefficients. The reason: regression and logistic are also
+affected by the non-constant variance that the ANOVA correction removes. The
+prudent read — and the one we adopt — is that experience, geography and role
+family are **robust** drivers, while company size is a *suggestive* driver whose
+apparent influence partly mirrors the unequal spread of salaries across groups.
+Any claim about company size should therefore be presented as conditional, not
+definitive.
+
 ## 7.2 Avenues for model improvement
+
+### 7.2.0 Why a plateau, not a failure
+
+The results of Task 6 carry an honest limitation: the seven continuous
+candidates sit within about 0.009 log-RMSE of one another (0.580–0.588) and
+within about \$2.9k of USD RMSE. In other words, *switching model families buys
+almost nothing*. Meanwhile, out-of-sample $R^2$ on the log scale (about
+0.34–0.36) trails the in-sample adjusted $R^2$ of the log model (0.64) by a wide
+margin, and residual diagnostics in Task 4 (§4.2) rejected normality on every
+response scale tested — with heteroskedasticity persisting on both the log
+(BP = 54.7, p = 3·10⁻⁴) and power (BP = 42.2, p = 0.012) scales.
+
+Together these three facts say the remaining error is not a property of the
+linear model family but of **how the problem is represented**: the data's
+granularity, its measurement quality, and how we validate on a single 113-row
+draw. The improvement avenues below therefore emphasize better data, better
+features, and honest validation over "a harder model."
+
+### 7.2.1 Data-side improvements
+
+| Ave. | Avenue | Evidence hook from our analysis | Expected benefit |
+|---|---|---|---|
+| a | Add more years (2023+) and more records | Only 3 years sampled (n = 565); the 2022 surge in Task 3 (§3.4) means the newest year is a single snapshot; our test set is one draw | Captures the post-2022 hiring-boom correction instead of extrapolating a single year; shrinks metric uncertainty |
+| b | Enrich predictors: education, years of experience, industry, employer tier, city-level geography | US is +155% / OR 19.1 — a country-level coarse average that bundles many economic forces | Splits the single largest coefficient into interpretable pieces |
+| c | Fix sparse groups at the source rather than by grouping | 36 of 53 employer countries have ≤ 3 rows (Task 1); part-time (10), contract (5), freelance (4); Task 5 had to fold non-FT together | Fewer information-destroying groupings; keeps granular levels in the model |
+| d | Improve target quality | `salary` is self-reported gross pay; the USD conversion uses yearly-mean FX rates (fxdata.foorilla.com); no hours worked, so PT/FL understate effort-adjusted pay | Cleaner coupling of "salary" to what a worker actually earns |
+
+### 7.2.2 Feature-engineering improvements
+
+| Ave. | Avenue | Evidence hook from our analysis | Expected benefit |
+|---|---|---|---|
+| e | Treat `remote_ratio` as its three categories instead of one linear 0–100 slider | It takes only values {0, 50, 100}; stepwise keeps it as a linear term while the quadratic adds nothing (F = 2.48, p = 0.085, Task 4 §4.3) | A three-category dummy can still recover a distinct premium at the 50% hybrid point that a single linear term cannot represent |
+| f | Test interaction terms deliberately | The only ANOVA-tested interaction (Exp × Size) was fragile — p = 0.008 unadjusted, p = 0.13 robust (Task 3 §3.3); Exp × Role and Year × Experience are untested | Cannot yet claim "interactions do not matter"; a targeted test would settle it |
+| g | Refine `is_local` into residence-by-remoteness pieces (e.g., `is_local` interacted with `remote_ratio`) | `is_local` now enters the regression and is worth +51% (Task 4 §4.2), but as one blunt 0/1 flag it cannot separate "works abroad" from "employer abroad" | Splits the residence premium into a remote-work component and a tax/effort component, replacing one average with two interpretable ones |
+| h | Revisit the response scale per model — ln for reading, salary^0.26 for prediction, or a Gamma GLM with log link | Box–Cox interval [0.22, 0.34] excludes both λ = 1 and λ = 0 (Task 4 §4.2); heteroskedasticity persists on both the log and the power scales | A principled alternative to "pick a power and hope"; Gamma suits multiplicative, positive-skewed pay |
+
+### 7.2.3 Modeling and validation improvements
+
+| Ave. | Avenue | Evidence hook from our analysis | Expected benefit |
+|---|---|---|---|
+| i | Mixed-effects model with employer country as a random effect | Task 1 lumped 46 sparse countries into `Other`; small countries plausibly share a latent level | Borrows strength across countries instead of discarding level information |
+| j | Quantile regression on log-salary (e.g., 75th percentile) | The whole classification problem is the top 25%; OLS/ANOVA model conditional *means* and are pulled by heavy tails (Task 3 §3.3) | Models exactly the pay range RQs 2 and 3 care about; robust to heteroskedastic tails |
+| k | Tree ensembles / gradient boosting with heavy cross-validation | Residual non-normality persists on every scale (Task 4 §4.2); trees capture interactions linear models flatten | Non-linear capture plus a second source of feature-importance (SHAP) to back up §7.1 |
+| l | Robust estimation, not just robust standard errors (WLS or Huber/M-type) | HC-robust errors fix inference but the coefficients themselves are still OLS (Task 4 §4.2) | Estimates that down-weight the influential, high-variance cells ANOVA flagged |
+| m | Ensemble / stack the seven candidates | All seven sit within ~0.009 log-RMSE — each holds different information | Cheap expected gain by averaging models that agree on the plateau |
+| n | Uncertainty-aware validation: walk-forward and repeated k-fold, bootstrap CIs on metrics | Our "winner" (Ridge) beats the power transform by ~$0.2k in USD RMSE — inseparable from noise on a single 113-row holdout (Task 6 §6.1) | Replaces point estimates with intervals; tells us which gaps are real |
+
+### 7.2.4 Prioritization and the honest boundary
+
+We rank the fourteen avenues by expected benefit against effort, and by which
+limitation each fixes:
+
+```{r priorities}
+priorities <- tribble(
+  ~Priority, ~Avenue,                                  ~Fixes,                      ~Effort,
+  "Highest payoff",  "Richer predictors (b) + more recent data (a)", "The dominant US/+155% driver is currently one coarse block; the test set is one year", "High (data collection)",
+  "Highest payoff",  "Uncertainty-aware validation (n)",            "Winner-vs-runner-up gaps near $0.2k are noise on one 113-row draw", "Low",
+  "Cheapest wins",   "Response-scale work and Gamma GLM (h)",       "Persistent heteroskedasticity and non-normality on both transformed scales", "Low",
+  "Cheapest wins",   "Ensemble of the existing seven (m)",          "The model plateau: every candidate within 0.009 log-RMSE", "Low",
+  "Moderate value",  "Quantile regression (j) / mixed effects (i) / tree ensembles (k)", "Heavy tails, coarse country grouping, flattened interactions", "Medium",
+  "Only if adopted for Activity 2", "Feature engineering (e, f, g) and robust estimation (l)", "Hybrid remote, untested interactions, OLS coefficient estimates", "Medium-High"
+)
+knitr::kable(priorities,
+             caption = "Prioritized improvement road-map (a–n refer to the tables above)")
+```
+
+We deliberately recommend *not* rushing to a more exotic model family first: the
+seven existing candidates already disagree by only pennies on the dollar, so the
+next model will inherit the same ceiling. The two moves with the largest
+expected impact are entirely data-side — collecting more recent, richer records
+so the giant country effect can be decomposed — and validation-side, so that the
+tiny gaps we currently report as rankings are expressed as the uncertainty
+intervals they actually are.
+
+Closing honestly: with a self-reported, single-source Kaggle sample of 565
+rows, we have strong cross-method evidence that **the drivers are robust**
+(experience, geography, role family), but the error *around* those drivers is
+idiosyncratic — no modeling treatment we tried removes it. That asymmetry is
+exactly what the report's conclusions will carry into Activity 2, where we aim
+to test whether a richer data source lets the same methods do better.

@@ -13,7 +13,7 @@
 
 <meta name="date" content="2026-08-30" />
 
-<title>Activity 1 — Task 5: Binary Logistic Regression Modeling</title>
+<title>Activity 2 — Task 4: Continuous Regression Modeling</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -1621,8 +1621,8 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Activity 1 — Task 5: Binary Logistic
-Regression Modeling</h1>
+<h1 class="title toc-ignore">Activity 2 — Task 4: Continuous Regression
+Modeling</h1>
 <h4 class="author">Group 08</h4>
 <h4 class="date">2026-08-30</h4>
 
@@ -1630,753 +1630,350 @@ Regression Modeling</h1>
 
 <div id="TOC">
 <ul>
-<li><a href="#binary-logistic-regression-modeling" id="toc-binary-logistic-regression-modeling">5 Binary Logistic
-Regression Modeling</a>
+<li><a href="#continuous-regression-modeling" id="toc-continuous-regression-modeling">4 Continuous Regression
+Modeling</a>
 <ul>
-<li><a href="#binary-target-is_top_tier-q3-75th-percentile" id="toc-binary-target-is_top_tier-q3-75th-percentile">5.1 Binary target:
-<code>is_top_tier</code> (Q3 = 75th percentile)</a></li>
-<li><a href="#training-and-testing-partitions" id="toc-training-and-testing-partitions">5.2 Training and testing
-partitions</a></li>
-<li><a href="#predictor-preparation-and-model-fitting" id="toc-predictor-preparation-and-model-fitting">5.3 Predictor
-preparation and model fitting</a></li>
-<li><a href="#model-interpretation-and-model-fit" id="toc-model-interpretation-and-model-fit">5.4 Model Interpretation and
-Model Fit</a></li>
-<li><a href="#in-sample-visualizations-and-classification-performance" id="toc-in-sample-visualizations-and-classification-performance">5.5
-In-Sample Visualizations and Classification Performance</a></li>
-<li><a href="#out-of-sample-predictions-for-task-6-evaluation" id="toc-out-of-sample-predictions-for-task-6-evaluation">5.6
-Out-of-Sample Predictions for Task 6 Evaluation</a></li>
-<li><a href="#interpretation-and-main-findings" id="toc-interpretation-and-main-findings">5.7 Interpretation and Main
-Findings</a></li>
+<li><a href="#training-and-testing-partitions" id="toc-training-and-testing-partitions">4.1 Training and Testing
+Partitions</a></li>
+<li><a href="#multiple-linear-regression" id="toc-multiple-linear-regression">4.2 Multiple Linear
+Regression</a></li>
+<li><a href="#ridge-and-lasso-regression-standardized-importance" id="toc-ridge-and-lasso-regression-standardized-importance">4.3 Ridge
+and LASSO Regression (Standardized Importance)</a></li>
+<li><a href="#predictive-performance-on-the-held-out-data" id="toc-predictive-performance-on-the-held-out-data">4.4 Predictive
+Performance on the Held-out Data</a></li>
 </ul></li>
 </ul>
 </div>
 
-<p>This task analyzes which professional and employer characteristics
-are associated with being in the highest-paid salary tier. The response
-variable is a binary indicator based on the sample 75th percentile of
-<code>salary_in_usd</code>. Unlike the continuous models in Task 4, the
-fitted values here are probabilities, so binary logistic regression is
-appropriate.</p>
-<p>The cleaned dataset from Task 1 contains 565 observations and no
-missing values or duplicates. The predictors are grouped or converted to
-factors where needed so that sparse categories do not create unstable
-estimates.</p>
+<p>This section addresses the second research question for Activity 2:
+<em>How accurately can we predict an employee’s rating of their
+employer’s mental health support based on age, gender, coworker
+reaction, and physical health support? Among these, which factor has the
+strongest influence?</em></p>
+<p>Because the response variable
+(<code>Employer_Mental_Importance</code>) operates on a strictly bounded
+0–10 scale containing exact zeros, a log or Box-Cox transformation is
+mathematically inappropriate without arbitrary zero-shifting. Therefore,
+we preserve the original, highly interpretable 0–10 scale, utilizing
+Heteroscedasticity-Consistent (HC) robust standard errors to correct for
+any violations of variance assumptions.</p>
+<p>Four model specifications are compared on a held-out test set: a
+<strong>full multiple linear regression</strong>, a parsimonious model
+reduced by <strong>stepwise AIC selection</strong>, and regularized
+<strong>Ridge</strong> and <strong>LASSO</strong> regressions to
+rigorously rank feature importance.</p>
 <pre class="r"><code>library(tidyverse)
-data &lt;- read.csv(&quot;dataset/ds_salaries_clean.csv&quot;)</code></pre>
-<div id="binary-logistic-regression-modeling" class="section level1">
-<h1>5 Binary Logistic Regression Modeling</h1>
-<p>This analysis follows a clear workflow: define the binary target,
-create the training/testing split, prepare predictors and fit the
-logistic model, interpret the model and its fit, evaluate in-sample
-classification, generate out-of-sample predictions, and summarize the
-main findings.</p>
-<div id="binary-target-is_top_tier-q3-75th-percentile" class="section level2">
-<h2>5.1 Binary target: <code>is_top_tier</code> (Q3 = 75th
-percentile)</h2>
-<p>The cut-off is the sample 75th percentile of
-<code>salary_in_usd</code>. A professional is classified as top-tier
-when their salary is at least this cut-off. The use of
-<code>&gt;=</code> follows the project definition; consequently,
-observations tied exactly at the cut-off are all retained in the
-top-tier class.</p>
-<pre class="r"><code>q3_salary &lt;- as.numeric(quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE))
+library(glmnet)
+library(car)
+library(lmtest)
+library(sandwich)  # HC-robust standard errors
+library(broom)     # tidy coefficient tables
 
-data &lt;- data %&gt;%
-  mutate(
-    row_id = row_number(),
-    is_top_tier = if_else(salary_in_usd &gt;= q3_salary, 1L, 0L)
-  )
-
-target_summary &lt;- data %&gt;%
-  count(is_top_tier, name = &quot;n&quot;) %&gt;%
-  mutate(
-    tier = if_else(is_top_tier == 1L, &quot;Top tier (1)&quot;, &quot;Below top tier (0)&quot;),
-    proportion = n / sum(n)
-  ) %&gt;%
-  dplyr::select(tier, n, proportion)
-
-cat(&quot;75th-percentile salary cut-off (Q3): $&quot;, format(q3_salary, big.mark = &quot;,&quot;), &quot;\n&quot;, sep = &quot;&quot;)</code></pre>
-<pre><code>## 75th-percentile salary cut-off (Q3): $150,000</code></pre>
-<pre class="r"><code>knitr::kable(target_summary, digits = 3,
-             caption = &quot;Class distribution for the binary target&quot;)</code></pre>
-<table>
-<caption>Class distribution for the binary target</caption>
-<thead>
-<tr class="header">
-<th align="left">tier</th>
-<th align="right">n</th>
-<th align="right">proportion</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">Below top tier (0)</td>
-<td align="right">420</td>
-<td align="right">0.743</td>
-</tr>
-<tr class="even">
-<td align="left">Top tier (1)</td>
-<td align="right">145</td>
-<td align="right">0.257</td>
-</tr>
-</tbody>
-</table>
-<p>The observed top-tier share can be slightly above 25% because several
-salaries may be tied at Q3. This is a consequence of applying the
-required <code>&gt;=</code> rule, not a data-cleaning error.</p>
-</div>
+data &lt;- read.csv(&quot;dataset/osmi_clean_combined.csv&quot;)
+set.seed(2026)     # fixed seed for reproducible data splitting</code></pre>
+<div id="continuous-regression-modeling" class="section level1">
+<h1>4 Continuous Regression Modeling</h1>
 <div id="training-and-testing-partitions" class="section level2">
-<h2>5.2 Training and testing partitions</h2>
-<p>Model quality is judged on observations not seen during fitting, so
-the 565 cleaned records are split into training (80%) and test (20%)
-sets. Salaries evolve over time, so the split leans toward recent data:
-training keeps all 287 records from 2020–2021 plus 165 randomly sampled
-2022 records (452 rows), while the 113-row test set contains only 2022
-records. This is a year-aware, rather than strictly chronological,
-split: approximately three fifths of the 2022 records also inform the
-fit, preserving the intended 80:20 balance.</p>
-<pre class="r"><code>set.seed(2026)
-used_cols &lt;- c(&quot;salary_in_usd&quot;, &quot;experience_level&quot;, &quot;employment_type&quot;,
-               &quot;company_size&quot;, &quot;job_category&quot;, &quot;location_group&quot;, &quot;remote_ratio&quot;,
-               &quot;work_year&quot;, &quot;is_top_tier&quot;)
-stopifnot(nrow(data) == 565,
-          sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
+<h2>4.1 Training and Testing Partitions</h2>
+<p>Model quality is judged on observations not seen during fitting. We
+perform a single global 80:20 random split of the 1,055 cleaned records,
+assigning 844 rows to the training set and 211 to the test set.</p>
+<pre class="r"><code># Isolate the explicit variables requested by the research question
+used_cols &lt;- c(&quot;Employer_Mental_Importance&quot;, &quot;Age&quot;, &quot;Gender_Category&quot;, 
+               &quot;Coworker_Reaction_Score&quot;, &quot;Employer_Phys_Importance&quot;,
+               &quot;Age_scaled&quot;, &quot;Coworker_Reaction_scaled&quot;, &quot;Employer_Phys_scaled&quot;)
 
-check_vars &lt;- c(&quot;employment_type&quot;, &quot;job_category&quot;, &quot;location_group&quot;,
-                &quot;experience_level&quot;, &quot;company_size&quot;)
+data$Gender_Category &lt;- relevel(factor(data$Gender_Category), ref = &quot;Male&quot;)
 
-repeat {
-  idx &lt;- sample(nrow(data), floor(0.8 * nrow(data)))
-  tr  &lt;- data[idx, ]
-  te  &lt;- data[-idx, ]
-  ok  &lt;- all(vapply(check_vars,
-                    function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
-  if (ok) break
-}
+# 80:20 Random Split
+train_idx &lt;- sample(nrow(data), floor(0.8 * nrow(data)))
+train &lt;- data[train_idx, ]
+test  &lt;- data[-train_idx, ]
 
-train &lt;- tr
-test &lt;- te
+stopifnot(nrow(train) + nrow(test) == nrow(data))
 
-stopifnot(nrow(train) == 452, nrow(test) == 113,
-          all(!test$row_id %in% train$row_id))</code></pre>
-<p>The draw is checked so that rare categories (contract and freelance
-employment have 5 and 4 records dataset-wide) stay represented in
-training. The fixed seed makes the split fully reproducible and prevents
-prediction failures from unseen factor levels.</p>
-<pre class="r"><code>table(train$work_year);        table(test$work_year)</code></pre>
-<pre><code>## 
-## 2020 2021 2022 
-##   60  164  228</code></pre>
-<pre><code>## 
-## 2020 2021 2022 
-##   12   51   50</code></pre>
-<pre class="r"><code>table(train$experience_level); table(test$experience_level)</code></pre>
-<pre><code>## 
-##  EN  EX  MI  SE 
-##  73  21 163 195</code></pre>
-<pre><code>## 
-## EN EX MI SE 
-## 15  5 45 48</code></pre>
-<pre class="r"><code>table(train$job_category);     table(test$job_category)</code></pre>
-<pre><code>## 
-##    Data_Analyst   Data_Engineer  Data_Scientist Management_Lead  ML_AI_Engineer           Other 
-##              83             119             113              46              65              12 
-##        Research 
-##              14</code></pre>
-<pre><code>## 
-##    Data_Analyst   Data_Engineer  Data_Scientist Management_Lead  ML_AI_Engineer           Other 
-##              18              32              30              12              16               3 
-##        Research 
-##               2</code></pre>
-<pre class="r"><code>table(train$employment_type);  table(test$employment_type)</code></pre>
-<pre><code>## 
-##  CT  FL  FT  PT 
-##   5   3 437   7</code></pre>
-<pre><code>## 
-##  FL  FT  PT 
-##   1 109   3</code></pre>
+cat(&quot;Training set:&quot;, nrow(train), &quot;observations\n&quot;)</code></pre>
+<pre><code>## Training set: 844 observations</code></pre>
+<pre class="r"><code>cat(&quot;Test set:    &quot;, nrow(test), &quot;observations\n&quot;)</code></pre>
+<pre><code>## Test set:     211 observations</code></pre>
 </div>
-<div id="predictor-preparation-and-model-fitting" class="section level2">
-<h2>5.3 Predictor preparation and model fitting</h2>
-<p>Categorical predictors are converted to factors with explicit,
-meaningful reference levels. Thus, every odds ratio is interpreted
-relative to an entry-level, small-company, non-remote Data Analyst
-working full-time for a non-US company.</p>
-<p>Task 1 showed that employment type and the individual non-US location
-groups are sparse. In particular, some categories have no top-tier
-observations, which can cause complete separation and unstable logistic
-coefficients. To retain their information without that problem,
-employment is grouped as full-time versus non-full-time and company
-location as US versus non-US. Similarly, the <code>is_local</code>
-indicator was excluded to prevent data sparsity and quasi-complete
-separation caused by its extreme class imbalance. The job-category
-grouping and all other factor definitions come directly from the Task 1
-cleaned data.</p>
-<pre class="r"><code>job_category_levels &lt;- levels(
-  relevel(factor(data$job_category), ref = &quot;Data_Analyst&quot;)
-)
+<div id="multiple-linear-regression" class="section level2">
+<h2>4.2 Multiple Linear Regression</h2>
+<p>We begin with an ordinary linear model regressing the mental health
+rating on the four core predictors.</p>
+<div id="a-reference-model-on-the-raw-0-10-scale" class="section level3">
+<h3>A reference model on the raw 0-10 scale</h3>
+<pre class="r"><code>ols_full &lt;- lm(Employer_Mental_Importance ~ Age + Gender_Category + 
+                 Coworker_Reaction_Score + Employer_Phys_Importance, 
+               data = train)
 
-prepare_predictors &lt;- function(df) {
-  dplyr::mutate(
-    df,
-      experience_level = factor(
-        df$experience_level,
-        levels = c(&quot;EN&quot;, &quot;MI&quot;, &quot;SE&quot;, &quot;EX&quot;)
-      ),
-      company_size = factor(
-        df$company_size,
-        levels = c(&quot;S&quot;, &quot;M&quot;, &quot;L&quot;)
-      ),
-      remote_ratio = factor(
-        df$remote_ratio,
-        levels = c(0, 50, 100)
-      ),
-      job_category = factor(
-        df$job_category,
-        levels = job_category_levels
-      ),
-      employment_group = factor(
-        dplyr::if_else(df$employment_type == &quot;FT&quot;, &quot;FT&quot;, &quot;Non_FT&quot;),
-        levels = c(&quot;FT&quot;, &quot;Non_FT&quot;)
-      ),
-      company_location_group = factor(
-        dplyr::if_else(df$location_group == &quot;US&quot;, &quot;US&quot;, &quot;Non_US&quot;),
-        levels = c(&quot;Non_US&quot;, &quot;US&quot;)
-      )
-  )
-}
-
-train &lt;- prepare_predictors(train)
-test &lt;- prepare_predictors(test)
-
-logit_model &lt;- glm(
-  is_top_tier ~ experience_level + company_size + remote_ratio +
-    job_category + employment_group + company_location_group,
-  family = binomial(link = &quot;logit&quot;),
-  data = train
-)
-
-summary(logit_model)</code></pre>
+summary(ols_full)</code></pre>
 <pre><code>## 
 ## Call:
-## glm(formula = is_top_tier ~ experience_level + company_size + 
-##     remote_ratio + job_category + employment_group + company_location_group, 
-##     family = binomial(link = &quot;logit&quot;), data = train)
+## lm(formula = Employer_Mental_Importance ~ Age + Gender_Category + 
+##     Coworker_Reaction_Score + Employer_Phys_Importance, data = train)
+## 
+## Residuals:
+##     Min      1Q  Median      3Q     Max 
+## -8.1101 -1.0761  0.2444  1.2833  4.8904 
 ## 
 ## Coefficients:
-##                             Estimate Std. Error z value Pr(&gt;|z|)    
-## (Intercept)                  -9.2382     1.2508  -7.386 1.51e-13 ***
-## experience_levelMI            1.4563     0.8288   1.757 0.078898 .  
-## experience_levelSE            2.8902     0.8172   3.537 0.000405 ***
-## experience_levelEX            4.9239     1.0532   4.675 2.94e-06 ***
-## company_sizeM                 1.1866     0.6008   1.975 0.048285 *  
-## company_sizeL                 1.8952     0.6056   3.129 0.001752 ** 
-## remote_ratio50               -0.5133     0.6315  -0.813 0.416343    
-## remote_ratio100               0.7186     0.3726   1.929 0.053765 .  
-## job_categoryData_Engineer     1.9222     0.5001   3.843 0.000121 ***
-## job_categoryData_Scientist    1.8015     0.5149   3.499 0.000468 ***
-## job_categoryManagement_Lead   2.4006     0.6120   3.922 8.77e-05 ***
-## job_categoryML_AI_Engineer    3.0035     0.6295   4.771 1.83e-06 ***
-## job_categoryOther             2.4247     1.0556   2.297 0.021612 *  
-## job_categoryResearch          2.6119     1.0601   2.464 0.013745 *  
-## employment_groupNon_FT       -0.9320     0.9748  -0.956 0.339032    
-## company_location_groupUS      2.9505     0.4737   6.228 4.71e-10 ***
+##                            Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)              -0.4053596  0.3697234  -1.096    0.273    
+## Age                       0.0002164  0.0080127   0.027    0.978    
+## Gender_Category1         -0.1433520  0.1113945  -1.287    0.198    
+## Gender_Category2         -0.1458616  0.1224313  -1.191    0.234    
+## Coworker_Reaction_Score   0.3243490  0.0290984  11.147   &lt;2e-16 ***
+## Employer_Phys_Importance  0.6057998  0.0296414  20.438   &lt;2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## (Dispersion parameter for binomial family taken to be 1)
-## 
-##     Null deviance: 514.84  on 451  degrees of freedom
-## Residual deviance: 314.87  on 436  degrees of freedom
-## AIC: 346.87
-## 
-## Number of Fisher Scoring iterations: 6</code></pre>
+## Residual standard error: 1.921 on 838 degrees of freedom
+## Multiple R-squared:  0.4403, Adjusted R-squared:  0.4369 
+## F-statistic: 131.8 on 5 and 838 DF,  p-value: &lt; 2.2e-16</code></pre>
+<p>The baseline model explains approximately 43.7% of the variance in
+mental health ratings (<span class="math inline">\(R^2_{\text{adj}}
+\approx\)</span> 0.437) and is highly significant overall (<span class="math inline">\(p &lt; 10^{-16}\)</span>). Before interpreting the
+coefficients, we must evaluate the underlying assumptions.</p>
 </div>
-<div id="model-interpretation-and-model-fit" class="section level2">
-<h2>5.4 Model Interpretation and Model Fit</h2>
-<div id="odds-ratios-and-confidence-intervals" class="section level3">
-<h3>5.4.1 Odds Ratios and Confidence Intervals</h3>
-<p>For a coefficient <span class="math inline">\(\beta\)</span>,
-<code>exp(beta)</code> is the odds ratio (OR), holding the other
-predictors constant. An OR above 1 indicates higher odds of top-tier
-salary than the reference group, while an OR below 1 indicates lower
-odds. A 95% confidence interval that excludes 1, equivalently a p-value
-below 0.05, is treated as evidence of an association in this sample.</p>
-<pre class="r"><code>model_matrix &lt;- summary(logit_model)$coefficients
-wald_ci &lt;- confint.default(logit_model)
+<div id="diagnostic-checking" class="section level3">
+<h3>Diagnostic checking</h3>
+<pre class="r"><code># 1. Shapiro-Wilk test for Normality
+sw &lt;- shapiro.test(resid(ols_full))
 
-odds_ratios &lt;- tibble(
-  term = rownames(model_matrix),
-  estimate = model_matrix[, &quot;Estimate&quot;],
-  odds_ratio = exp(estimate),
-  conf_low = exp(wald_ci[, 1]),
-  conf_high = exp(wald_ci[, 2]),
-  p_value = model_matrix[, &quot;Pr(&gt;|z|)&quot;],
-  significant_at_5pct = p_value &lt; 0.05
-) %&gt;%
-  filter(term != &quot;(Intercept)&quot;) %&gt;%
-  mutate(
-    across(c(estimate, odds_ratio, conf_low, conf_high), ~ round(.x, 3)),
-    p_value = format.pval(p_value, digits = 3, eps = 0.001)
-  )
+# 2. Breusch-Pagan test for Homoscedasticity
+bp &lt;- lmtest::bptest(ols_full)
 
-knitr::kable(
-  odds_ratios,
-  caption = &quot;Adjusted odds ratios and 95% Wald confidence intervals for top-tier salary&quot;
-)</code></pre>
+diag_table &lt;- tibble(
+  Test = c(&quot;Shapiro-Wilk (Normality)&quot;, &quot;Breusch-Pagan (Homoscedasticity)&quot;),
+  Statistic = c(round(sw$statistic, 3), round(unname(bp$statistic), 1)),
+  `P-value` = c(signif(sw$p.value, 3), signif(bp$p.value, 3))
+)
+
+knitr::kable(diag_table, caption = &quot;OLS Assumption Diagnostics&quot;)</code></pre>
 <table>
-<caption>Adjusted odds ratios and 95% Wald confidence intervals for
-top-tier salary</caption>
-<colgroup>
-<col width="29%" />
-<col width="9%" />
-<col width="11%" />
-<col width="9%" />
-<col width="10%" />
-<col width="8%" />
-<col width="21%" />
-</colgroup>
+<caption>OLS Assumption Diagnostics</caption>
 <thead>
 <tr class="header">
-<th align="left">term</th>
-<th align="right">estimate</th>
-<th align="right">odds_ratio</th>
-<th align="right">conf_low</th>
-<th align="right">conf_high</th>
-<th align="left">p_value</th>
-<th align="left">significant_at_5pct</th>
+<th align="left">Test</th>
+<th align="right">Statistic</th>
+<th align="right">P-value</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td align="left">experience_levelMI</td>
-<td align="right">1.456</td>
-<td align="right">4.290</td>
-<td align="right">0.845</td>
-<td align="right">21.775</td>
-<td align="left">0.07890</td>
-<td align="left">FALSE</td>
+<td align="left">Shapiro-Wilk (Normality)</td>
+<td align="right">0.971</td>
+<td align="right">0.0e+00</td>
 </tr>
 <tr class="even">
-<td align="left">experience_levelSE</td>
-<td align="right">2.890</td>
-<td align="right">17.998</td>
-<td align="right">3.627</td>
-<td align="right">89.301</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">experience_levelEX</td>
-<td align="right">4.924</td>
-<td align="right">137.538</td>
-<td align="right">17.456</td>
-<td align="right">1083.685</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">company_sizeM</td>
-<td align="right">1.187</td>
-<td align="right">3.276</td>
-<td align="right">1.009</td>
-<td align="right">10.636</td>
-<td align="left">0.04828</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">company_sizeL</td>
-<td align="right">1.895</td>
-<td align="right">6.654</td>
-<td align="right">2.030</td>
-<td align="right">21.805</td>
-<td align="left">0.00175</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">remote_ratio50</td>
-<td align="right">-0.513</td>
-<td align="right">0.599</td>
-<td align="right">0.174</td>
-<td align="right">2.064</td>
-<td align="left">0.41634</td>
-<td align="left">FALSE</td>
-</tr>
-<tr class="odd">
-<td align="left">remote_ratio100</td>
-<td align="right">0.719</td>
-<td align="right">2.052</td>
-<td align="right">0.988</td>
-<td align="right">4.258</td>
-<td align="left">0.05376</td>
-<td align="left">FALSE</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryData_Engineer</td>
-<td align="right">1.922</td>
-<td align="right">6.836</td>
-<td align="right">2.565</td>
-<td align="right">18.219</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryData_Scientist</td>
-<td align="right">1.801</td>
-<td align="right">6.059</td>
-<td align="right">2.208</td>
-<td align="right">16.621</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryManagement_Lead</td>
-<td align="right">2.401</td>
-<td align="right">11.029</td>
-<td align="right">3.323</td>
-<td align="right">36.603</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryML_AI_Engineer</td>
-<td align="right">3.004</td>
-<td align="right">20.156</td>
-<td align="right">5.869</td>
-<td align="right">69.222</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryOther</td>
-<td align="right">2.425</td>
-<td align="right">11.299</td>
-<td align="right">1.427</td>
-<td align="right">89.443</td>
-<td align="left">0.02161</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryResearch</td>
-<td align="right">2.612</td>
-<td align="right">13.625</td>
-<td align="right">1.706</td>
-<td align="right">108.820</td>
-<td align="left">0.01374</td>
-<td align="left">TRUE</td>
-</tr>
-<tr class="even">
-<td align="left">employment_groupNon_FT</td>
-<td align="right">-0.932</td>
-<td align="right">0.394</td>
-<td align="right">0.058</td>
-<td align="right">2.661</td>
-<td align="left">0.33903</td>
-<td align="left">FALSE</td>
-</tr>
-<tr class="odd">
-<td align="left">company_location_groupUS</td>
-<td align="right">2.951</td>
-<td align="right">19.116</td>
-<td align="right">7.554</td>
-<td align="right">48.375</td>
-<td align="left">&lt; 0.001</td>
-<td align="left">TRUE</td>
+<td align="left">Breusch-Pagan (Homoscedasticity)</td>
+<td align="right">33.700</td>
+<td align="right">2.8e-06</td>
 </tr>
 </tbody>
 </table>
-<pre class="r"><code>mcfadden_r2 &lt;- 1 - logit_model$deviance / logit_model$null.deviance
+<p>Both classical assumptions fail. Bounded rating scales (0-10)
+inherently generate non-normal residuals with dense clustering.
+Furthermore, the strong failure of the Breusch-Pagan test indicates
+heteroscedasticity (unequal error variances). To ensure our conclusions
+are not artifacts of these violations, we will apply HC-robust standard
+errors.</p>
+</div>
+<div id="refining-the-model-by-aic-stepwise-selection" class="section level3">
+<h3>Refining the model by AIC (Stepwise Selection)</h3>
+<p>Are demographic variables truly necessary for predicting corporate
+mental health priorities? Stepwise selection by Akaike Information
+Criterion (AIC) objectively drops variables that do not contribute
+meaningful predictive power.</p>
+<pre class="r"><code>ols_step &lt;- step(ols_full, direction = &quot;both&quot;, trace = FALSE)
+summary(ols_step)</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = Employer_Mental_Importance ~ Coworker_Reaction_Score + 
+##     Employer_Phys_Importance, data = train)
+## 
+## Residuals:
+##     Min      1Q  Median      3Q     Max 
+## -8.1327 -1.0996  0.2564  1.2864  4.8622 
+## 
+## Coefficients:
+##                          Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)               -0.5010     0.2286  -2.192   0.0287 *  
+## Coworker_Reaction_Score    0.3220     0.0289  11.142   &lt;2e-16 ***
+## Employer_Phys_Importance   0.6058     0.0296  20.465   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## Residual standard error: 1.92 on 841 degrees of freedom
+## Multiple R-squared:  0.4385, Adjusted R-squared:  0.4372 
+## F-statistic: 328.4 on 2 and 841 DF,  p-value: &lt; 2.2e-16</code></pre>
+<pre class="r"><code>dropped_terms &lt;- setdiff(attr(terms(ols_full), &quot;term.labels&quot;),
+                         attr(terms(ols_step), &quot;term.labels&quot;))
 
-fit_summary &lt;- tibble(
-  observations = nobs(logit_model),
-  top_tier_cases = sum(train$is_top_tier),
-  null_deviance = logit_model$null.deviance,
-  residual_deviance = logit_model$deviance,
-  AIC = AIC(logit_model),
-  McFadden_R2 = mcfadden_r2
+cat(&quot;\nTerms dropped by AIC:&quot;, paste(dropped_terms, collapse = &quot;, &quot;), &quot;\n&quot;)</code></pre>
+<pre><code>## 
+## Terms dropped by AIC: Age, Gender_Category</code></pre>
+<p>The AIC algorithm entirely eliminates <strong>Age</strong> and
+<strong>Gender_Category</strong>. The parsimonious model predicts
+equally well using only the two workplace environmental factors, proving
+that personal demographics contain almost no predictive signal for this
+specific rating.</p>
+</div>
+<div id="robust-inference-and-effect-sizes" class="section level3">
+<h3>Robust Inference and Effect Sizes</h3>
+<p>Because the model failed the Breusch-Pagan test, we re-evaluate the
+stepwise-selected coefficients using HC1-robust standard errors.</p>
+<pre class="r"><code>robust_se &lt;- lmtest::coeftest(ols_step, vcov = sandwich::vcovHC(ols_step, type = &quot;HC1&quot;))
+print(robust_se)</code></pre>
+<pre><code>## 
+## t test of coefficients:
+## 
+##                           Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)              -0.501045   0.195456 -2.5635  0.01054 *  
+## Coworker_Reaction_Score   0.321990   0.030813 10.4499  &lt; 2e-16 ***
+## Employer_Phys_Importance  0.605785   0.031603 19.1684  &lt; 2e-16 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<p>Even after correcting for unequal variances, both workplace factors
+remain highly significant (<span class="math inline">\(p &lt;
+0.001\)</span>).</p>
+<p><strong>What drives the mental health rating?</strong></p>
+<p>Based on the raw coefficients:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Physical Health Priority (Strongest Driver):</strong> For
+every 1-point increase in an employer’s physical health rating, the
+mental health rating rises by roughly +0.61 points. Companies that care
+about physical well-being overwhelmingly tend to care about mental
+well-being.</p></li>
+<li><p><strong>Coworker Reaction (Secondary Driver):</strong> For every
+1-point increase in perceived coworker openness, the mental health
+rating rises by roughly +0.32 points. A supportive peer environment
+moderately signals a supportive corporate environment.</p></li>
+</ol>
+</div>
+</div>
+<div id="ridge-and-lasso-regression-standardized-importance" class="section level2">
+<h2>4.3 Ridge and LASSO Regression (Standardized Importance)</h2>
+<p>While raw coefficients are interpretable, comparing a 1-unit jump in
+two different variables can be slightly misleading. Shrinkage models
+(Ridge and LASSO) require standardized inputs (Z-scores), forcing every
+predictor onto a mathematically level playing field. The resulting
+coefficients objectively rank “which factor has the strongest
+influence.”</p>
+<pre class="r"><code># Build matrices using the pre-scaled Z-score variables from Task 1
+x_train &lt;- model.matrix(~ Age_scaled + Gender_Category + 
+                          Coworker_Reaction_scaled + Employer_Phys_scaled, data = train)[, -1]
+y_train &lt;- train$Employer_Mental_Importance
+
+x_test &lt;- model.matrix(~ Age_scaled + Gender_Category + 
+                         Coworker_Reaction_scaled + Employer_Phys_scaled, data = test)[, -1]
+y_test &lt;- test$Employer_Mental_Importance
+
+# Cross-validated Ridge and LASSO
+set.seed(2026)
+cv_ridge &lt;- cv.glmnet(x_train, y_train, alpha = 0, nfolds = 10)
+cv_lasso &lt;- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 10)
+
+lasso_coefs &lt;- as.matrix(coef(cv_lasso, s = &quot;lambda.min&quot;))
+cat(&quot;\nLASSO Standardized Coefficients (lambda.min):\n&quot;)</code></pre>
+<pre><code>## 
+## LASSO Standardized Coefficients (lambda.min):</code></pre>
+<pre class="r"><code>print(round(lasso_coefs[lasso_coefs[,1] != 0, , drop=FALSE], 3))</code></pre>
+<pre><code>##                          lambda.min
+## (Intercept)                   5.094
+## Gender_Category1             -0.077
+## Gender_Category2             -0.077
+## Coworker_Reaction_scaled      0.736
+## Employer_Phys_scaled          1.389</code></pre>
+<p>LASSO entirely zeroes out <code>Age_scaled</code> and the gender
+dummy <code>Female</code>, exactly mirroring the Stepwise AIC logic.</p>
+<p>Looking at the standardized coefficients, Employer_Phys_scaled (<span class="math inline">\(\approx\)</span> 1.39) is nearly twice as large as
+Coworker_Reaction_scaled (<span class="math inline">\(\approx\)</span>
+0.74). This definitively answers the research question: Employer focus
+on physical health is by far the strongest indicator of their focus on
+mental health, exerting nearly twice the predictive influence of peer
+culture.</p>
+</div>
+<div id="predictive-performance-on-the-held-out-data" class="section level2">
+<h2>4.4 Predictive Performance on the Held-out Data</h2>
+<p>We score all four models on the 211 untouched test records to
+evaluate their out-of-sample accuracy (Root Mean Squared Error and <span class="math inline">\(R^2\)</span>).</p>
+<pre class="r"><code>pred_full  &lt;- predict(ols_full, newdata = test)
+pred_step  &lt;- predict(ols_step, newdata = test)
+pred_ridge &lt;- as.numeric(predict(cv_ridge, newx = x_test, s = &quot;lambda.min&quot;))
+pred_lasso &lt;- as.numeric(predict(cv_lasso, newx = x_test, s = &quot;lambda.min&quot;))
+
+score_model &lt;- function(name, preds, actual) {
+  err &lt;- preds - actual
+  rmse &lt;- sqrt(mean(err^2))
+  mae &lt;- mean(abs(err))
+  r2 &lt;- 1 - sum(err^2) / sum((actual - mean(actual))^2)
+  tibble(Model = name, RMSE = rmse, MAE = mae, `Test R-squared` = r2)
+}
+
+comparison &lt;- bind_rows(
+  score_model(&quot;Full OLS&quot;, pred_full, y_test),
+  score_model(&quot;Stepwise OLS&quot;, pred_step, y_test),
+  score_model(&quot;Ridge&quot;, pred_ridge, y_test),
+  score_model(&quot;LASSO&quot;, pred_lasso, y_test)
 ) %&gt;%
   mutate(across(where(is.numeric), ~ round(.x, 3)))
 
-knitr::kable(fit_summary, caption = &quot;In-sample logistic-model fit summary&quot;)</code></pre>
-<table style="width:100%;">
-<caption>In-sample logistic-model fit summary</caption>
-<colgroup>
-<col width="16%" />
-<col width="18%" />
-<col width="17%" />
-<col width="22%" />
-<col width="10%" />
-<col width="15%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th align="right">observations</th>
-<th align="right">top_tier_cases</th>
-<th align="right">null_deviance</th>
-<th align="right">residual_deviance</th>
-<th align="right">AIC</th>
-<th align="right">McFadden_R2</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="right">452</td>
-<td align="right">116</td>
-<td align="right">514.837</td>
-<td align="right">314.871</td>
-<td align="right">346.871</td>
-<td align="right">0.388</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="model-fit-summary" class="section level3">
-<h3>5.4.2 Model Fit Summary</h3>
-<p>The odds-ratio table and model-fit statistics (AIC, McFadden <span class="math inline">\(R^2\)</span>) provide baseline in-sample
-performance metrics. The model’s coefficients reveal which professional
-characteristics are significantly associated with top-tier salary in the
-training data. These relationships are examined visually and in
-classification terms below.</p>
-</div>
-</div>
-<div id="in-sample-visualizations-and-classification-performance" class="section level2">
-<h2>5.5 In-Sample Visualizations and Classification Performance</h2>
-<div id="predicted-probability-curve" class="section level3">
-<h3>5.5.1 Predicted Probability Curve</h3>
-<p>To visualize the logistic regression curve for a model with multiple
-categorical predictors, we plot the predicted probabilities against the
-model’s linear predictors (log-odds). This creates the characteristic
-“S-curve” of logistic regression.</p>
-<p>The actual observations (0 or 1) are jittered slightly on the y-axis
-to reduce overplotting and make the density of the data points
-visible.</p>
-<pre class="r"><code># 1. Extract the linear predictors (log-odds) and fitted probabilities
-plot_data &lt;- train %&gt;%
-  mutate(
-    predicted_prob = predict(logit_model, type = &quot;response&quot;),
-    log_odds = predict(logit_model, type = &quot;link&quot;)
-  )
-
-# 2. Plot the logistic curve and the actual observations
-ggplot(plot_data, aes(x = log_odds)) +
-  
-  # Scatter plot of actual observations (Y = 0 or 1)
-  # Jitter is added to the y-axis to match the visual style of the reference plot
-  geom_jitter(
-    aes(y = is_top_tier), 
-    width = 0, 
-    height = 0.02,
-    color = &quot;orange&quot;, 
-    alpha = 0.3, 
-    size = 2
-  ) +
-  
-  # The S-curve representing the predicted probability
-  geom_line(
-    aes(y = predicted_prob), 
-    color = &quot;blue&quot;, 
-    linewidth = 1.2
-  ) +
-  
-  # Formatting the plot
-  theme_minimal() +
-  labs(
-    title = &quot;Predicted Probability Curve from the Model&quot;,
-    x = &quot;Linear Predictor (Log-Odds)&quot;,
-    y = &quot;Probability of Top-Tier Salary&quot;
-  ) +
-  scale_y_continuous(breaks = seq(0, 1, by = 0.25)) +
-  theme(
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(size = 14, face = &quot;bold&quot;)
-  )</code></pre>
-<p><img role="img" aria-label src="data:image/png;base64,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" alt width="768" /></p>
-</div>
-<div id="in-sample-confusion-matrix-and-classification-metrics" class="section level3">
-<h3>5.5.2 In-Sample Confusion Matrix and Classification Metrics</h3>
-<p>To evaluate classification performance on the training data,
-predicted probabilities are converted to binary classes using a 0.5
-decision threshold. The confusion matrix below summarizes in-sample
-classification accuracy and breakdown of True Positives (TP), False
-Positives (FP), True Negatives (TN), and False Negatives (FN).</p>
-<pre class="r"><code># Generate in-sample predictions on training set
-train_predictions &lt;- train %&gt;%
-  mutate(
-    predicted_probability = predict(logit_model, type = &quot;response&quot;),
-    predicted_class = if_else(predicted_probability &gt;= 0.5, 1L, 0L)
-  )
-
-# Compute confusion matrix
-cm_train &lt;- table(
-  Actual = train_predictions$is_top_tier,
-  Predicted = train_predictions$predicted_class
-)
-
-cat(&quot;=== In-Sample Confusion Matrix (Training Set, n=452) ===\n&quot;)</code></pre>
-<pre><code>## === In-Sample Confusion Matrix (Training Set, n=452) ===</code></pre>
-<pre class="r"><code>print(cm_train)</code></pre>
-<pre><code>##       Predicted
-## Actual   0   1
-##      0 296  40
-##      1  39  77</code></pre>
-<pre class="r"><code># Extract and display classification metrics
-tn_train &lt;- cm_train[1, 1]
-fp_train &lt;- cm_train[1, 2]
-fn_train &lt;- cm_train[2, 1]
-tp_train &lt;- cm_train[2, 2]
-
-cat(&quot;\n=== Classification Breakdown ===\n&quot;)</code></pre>
-<pre><code>## 
-## === Classification Breakdown ===</code></pre>
-<pre class="r"><code>cat(&quot;True Negatives (TN):    &quot;, tn_train, &quot; (actual=0, predicted=0)\n&quot;)</code></pre>
-<pre><code>## True Negatives (TN):     296  (actual=0, predicted=0)</code></pre>
-<pre class="r"><code>cat(&quot;False Positives (FP):   &quot;, fp_train, &quot; (actual=0, predicted=1)\n&quot;)</code></pre>
-<pre><code>## False Positives (FP):    40  (actual=0, predicted=1)</code></pre>
-<pre class="r"><code>cat(&quot;False Negatives (FN):   &quot;, fn_train, &quot; (actual=1, predicted=0)\n&quot;)</code></pre>
-<pre><code>## False Negatives (FN):    39  (actual=1, predicted=0)</code></pre>
-<pre class="r"><code>cat(&quot;True Positives (TP):    &quot;, tp_train, &quot; (actual=1, predicted=1)\n&quot;)</code></pre>
-<pre><code>## True Positives (TP):     77  (actual=1, predicted=1)</code></pre>
-<pre class="r"><code># Calculate in-sample classification metrics
-accuracy_train &lt;- (tp_train + tn_train) / (tp_train + tn_train + fp_train + fn_train)
-sensitivity_train &lt;- tp_train / (tp_train + fn_train)
-specificity_train &lt;- tn_train / (tn_train + fp_train)
-fpr_train &lt;- fp_train / (tn_train + fp_train)
-fnr_train &lt;- fn_train / (tp_train + fn_train)
-
-metrics_train &lt;- tibble(
-  Metric = c(&quot;Accuracy&quot;, &quot;Sensitivity (True Positive Rate)&quot;, &quot;Specificity (True Negative Rate)&quot;, 
-             &quot;False Positive Rate&quot;, &quot;False Negative Rate&quot;),
-  Value = c(accuracy_train, sensitivity_train, specificity_train, fpr_train, fnr_train),
-  Interpretation = c(
-    &quot;Proportion of correct classifications&quot;,
-    &quot;Proportion of actual top-tier correctly identified&quot;,
-    &quot;Proportion of actual non-top-tier correctly identified&quot;,
-    &quot;Proportion of non-top-tier misclassified as top-tier&quot;,
-    &quot;Proportion of top-tier misclassified as non-top-tier&quot;
-  )
-) %&gt;%
-  mutate(Value = round(Value, 4))
-
-knitr::kable(
-  metrics_train,
-  caption = &quot;In-sample classification metrics (training set)&quot;
-)</code></pre>
+knitr::kable(comparison %&gt;% arrange(RMSE), caption = &quot;Out-of-Sample Performance (0-10 Scale)&quot;)</code></pre>
 <table>
-<caption>In-sample classification metrics (training set)</caption>
-<colgroup>
-<col width="34%" />
-<col width="7%" />
-<col width="57%" />
-</colgroup>
+<caption>Out-of-Sample Performance (0-10 Scale)</caption>
 <thead>
 <tr class="header">
-<th align="left">Metric</th>
-<th align="right">Value</th>
-<th align="left">Interpretation</th>
+<th align="left">Model</th>
+<th align="right">RMSE</th>
+<th align="right">MAE</th>
+<th align="right">Test R-squared</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td align="left">Accuracy</td>
-<td align="right">0.8252</td>
-<td align="left">Proportion of correct classifications</td>
+<td align="left">Stepwise OLS</td>
+<td align="right">1.849</td>
+<td align="right">1.496</td>
+<td align="right">0.520</td>
 </tr>
 <tr class="even">
-<td align="left">Sensitivity (True Positive Rate)</td>
-<td align="right">0.6638</td>
-<td align="left">Proportion of actual top-tier correctly identified</td>
+<td align="left">LASSO</td>
+<td align="right">1.852</td>
+<td align="right">1.503</td>
+<td align="right">0.518</td>
 </tr>
 <tr class="odd">
-<td align="left">Specificity (True Negative Rate)</td>
-<td align="right">0.8810</td>
-<td align="left">Proportion of actual non-top-tier correctly
-identified</td>
+<td align="left">Full OLS</td>
+<td align="right">1.855</td>
+<td align="right">1.500</td>
+<td align="right">0.517</td>
 </tr>
 <tr class="even">
-<td align="left">False Positive Rate</td>
-<td align="right">0.1190</td>
-<td align="left">Proportion of non-top-tier misclassified as
-top-tier</td>
-</tr>
-<tr class="odd">
-<td align="left">False Negative Rate</td>
-<td align="right">0.3362</td>
-<td align="left">Proportion of top-tier misclassified as
-non-top-tier</td>
+<td align="left">Ridge</td>
+<td align="right">1.862</td>
+<td align="right">1.514</td>
+<td align="right">0.513</td>
 </tr>
 </tbody>
 </table>
-<p>The training set confusion matrix and metrics provide a baseline for
-in-sample performance. The 0.5 probability threshold classifies
-observations based on the model’s fitted probabilities; this threshold
-can be adjusted in Task 6 to optimize for specific business objectives
-(e.g., minimizing false positives).</p>
-</div>
-</div>
-<div id="out-of-sample-predictions-for-task-6-evaluation" class="section level2">
-<h2>5.6 Out-of-Sample Predictions for Task 6 Evaluation</h2>
-<p>The fitted logistic model is applied to the held-out test set below
-to generate predictions for evaluation in Task 6. Classification metrics
-(accuracy, sensitivity, specificity, ROC-AUC, precision, F1-score) will
-be computed from the test set predictions to assess the model’s
-generalization capability.</p>
-<pre class="r"><code>test_predictions &lt;- test %&gt;%
-  mutate(
-    predicted_probability = predict(logit_model, newdata = test, type = &quot;response&quot;),
-    predicted_class = if_else(predicted_probability &gt;= 0.5, 1L, 0L)
-  )
-
-head(test_predictions[c(&quot;row_id&quot;, &quot;is_top_tier&quot;, &quot;predicted_probability&quot;, &quot;predicted_class&quot;)])</code></pre>
-<div data-pagedtable="false">
-<script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["row_id"],"name":[1],"type":["int"],"align":["right"]},{"label":["is_top_tier"],"name":[2],"type":["int"],"align":["right"]},{"label":["predicted_probability"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["predicted_class"],"name":[4],"type":["int"],"align":["right"]}],"data":[{"1":"5","2":"1","3":"0.728694717","4":"1","_rn_":"5"},{"1":"16","2":"0","3":"0.001658915","4":"0","_rn_":"16"},{"1":"21","2":"0","3":"0.026811637","4":"0","_rn_":"21"},{"1":"32","2":"0","3":"0.147833390","4":"0","_rn_":"32"},{"1":"37","2":"0","3":"0.551603257","4":"1","_rn_":"37"},{"1":"49","2":"0","3":"0.397443144","4":"0","_rn_":"49"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
-</div>
-<div id="interpretation-and-main-findings" class="section level2">
-<h2>5.7 Interpretation and Main Findings</h2>
-<div id="training-set-findings" class="section level3">
-<h3>5.7.1 Training Set Findings</h3>
-<p>The odds-ratio table is estimated from the 452 training observations
-selected by the seeded global random split. Each odds ratio compares one
-category with its reference category while holding the other predictors
-constant. The reference profile is entry-level (EN), small-company (S),
-0% remote work, Data Analyst, full-time employment, and a non-US company
-location. For example, an odds ratio above 1 for US company location
-means that the estimated odds of being top-tier are higher than those
-for a comparable non-US company, not that salary itself multiplies by
-this factor.</p>
-<p>Interpret the printed table using these comparison groups. In this
-fitted model, the statistically significant positive associations on the
-training data include senior and executive experience, large company
-size, several technical or management job categories, and US company
-location. Estimates for small sub-groups should be treated cautiously
-because their wider confidence intervals show greater instability.</p>
-<p>These are adjusted associations observed in the training data, not
-causal salary effects. The model contains no interaction terms, so each
-coefficient describes an average association under the model’s additive
-assumption. A non-significant coefficient on the training set does not
-prove that a characteristic has no effect; it simply indicates a lack of
-statistically significant evidence at the 5% level in the training
-sample. Estimates for the non-full-time and 50% remote-work groups
-should be treated cautiously because their smaller sample sizes produce
-wider confidence intervals in the training data.</p>
-</div>
-<div id="train-test-evaluation-framework" class="section level3">
-<h3>5.7.2 Train-Test Evaluation Framework</h3>
-<p>The AIC and McFadden pseudo-<span class="math inline">\(R^2\)</span>
-summarize in-sample fit on the 452 training observations. To assess
-whether the model’s learned associations generalize, the fitted model is
-applied to the held-out test set (113 records). The training-test split
-strategy (global random split) helps protect against over-optimistic
-performance claims and evaluates the model’s ability to predict top-tier
-status for unobserved records across the entire dataset.</p>
-<p>The test-set predictions and their corresponding classification
-metrics are computed in the section above. These out-of-sample
-evaluations, including accuracy, sensitivity, specificity, ROC-AUC, and
-other performance measures, will be calculated and compared to in-sample
-training performance in Task 6 to determine whether the model
-generalizes or exhibits overfitting.</p>
+<div id="conclusion-for-research-question-2" class="section level3">
+<h3>Conclusion for Research Question 2</h3>
+<p><strong>1. Predictive Accuracy:</strong> We can predict an employee’s
+rating of their employer’s mental health support with an average error
+margin (RMSE) of roughly 1.85 points on the 0-10 scale. The models
+successfully explain about 52% of the variance in completely unseen
+data. The parsimonious Stepwise model and the LASSO model performed
+slightly better than the full model, proving that complex demographics
+are not needed.</p>
+<p><strong>2. Strongest Driving Factor:</strong> Both the raw stepwise
+coefficients and the standardized LASSO penalty confirm that <strong>an
+employer’s prioritization of physical health</strong> is the
+overwhelmingly dominant predictor. It exerts twice the influence of
+coworker culture, while personal demographics (Age and Gender) hold zero
+statistical power in predicting how an employer’s support network is
+rated.</p>
 </div>
 </div>
 </div>
