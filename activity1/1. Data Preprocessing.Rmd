@@ -3,6 +3,10 @@ title: "Activity 1 — Task 1: Data Preprocessing"
 author: "Group 08"
 date: "2026-08-16"
 output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
   pdf_document:
     latex_engine: xelatex
     toc: true
@@ -21,13 +25,13 @@ knitr::opts_chunk$set(echo = TRUE)
 We start by loading the raw dataset `ds_salaries.csv` (607 observations, 11
 variables) and inspecting its structure.
 
-Two currency-related columns are present: `salary` (gross pay in the *original*
+Two currency-related columns are present: `salary` (gross pay in the original
 currency, e.g. EUR, GBP, INR) and `salary_currency` (the ISO 4217 code for
 that column). Salary is reported in many currencies, which are not directly
 comparable; the dataset also supplies `salary_in_usd`, the same value already
 converted to US dollars at the collection-time exchange rate. We therefore use
-**`salary_in_usd` as the single response** throughout and do not model
-`salary`/`salary_currency` themselves — they carry no additional predictive
+`salary_in_usd` as the single response throughout and do not model
+`salary`/`salary_currency` themselves - they carry no additional predictive
 information beyond the USD value and would only introduce non-comparable,
 multi-currency redundancy.
 

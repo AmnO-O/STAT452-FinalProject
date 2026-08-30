@@ -20,9 +20,9 @@ knitr::opts_knit$set(root.dir = ".")
 knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = FALSE)
 ```
 
-This section addresses the first research question: *how accurately can we
+This section addresses the first research question: how accurately can we
 predict the salary of a Data Science professional worldwide, and which factors
-drive income levels?* We model `salary_in_usd` through its natural logarithm
+drive income levels? We model `salary_in_usd` through its natural logarithm
 `log_salary`, because the exploratory analysis showed a strongly right-skewed
 distribution with a handful of legitimate executive-level salaries; working on
 the log scale accommodates that skew without discarding real observations, and
@@ -184,7 +184,7 @@ par(mfrow = c(2, 2)); plot(ols_raw); par(mfrow = c(1, 1))
 
 Every check fails. Residual normality is rejected at astronomical
 significance (*p* ≈ 1.3·10⁻²¹), errors are heteroskedastic (BP = 41.6,
-*p* = 0.010), and the largest Cook's distance reaches 0.18 — a handful of
+*p* = 0.010), and the largest Cook's distance reaches 0.18 - a handful of
 executive-level records visibly dominate the fitted line. An untransformed
 linear model is therefore not a trustworthy basis for inference or
 prediction.
@@ -215,20 +215,6 @@ Task 6, which owns the held-out comparison.
 
 ### The regression on ln(salary)
 
-$$\ln(\text{salary}_i) = \beta_0 + \beta_1\,\text{experience}_i +
-\beta_2\,\text{role}_i + \beta_3\,\text{contract type}_i +
-\beta_4\,\text{company size}_i + \beta_5\,\text{employer location}_i +
-\beta_6\,\text{remote ratio}_i + \beta_7\,\text{year}_i +
-\beta_8\,\text{is\_local}_i + \varepsilon_i$$
-
-Location enters through the grouped employer-country variable plus a single
-`is_local` flag that records whether the employer country matches the
-employee's country of residence. The full employee-residence dummies are
-deliberately left out: for the largely non-remote workforce the two countries
-coincide, and carrying both sets of dummies would introduce near-duplicate
-predictors whose inflated variances distort every coefficient's standard
-error. The one-column indicator captures the essence of the residence signal
-at negligible collinearity cost.
 
 ```{r ols-full}
 ols_full <- lm(log_salary ~ experience_level + job_category + employment_type +
@@ -239,7 +225,7 @@ summary(ols_full)
 
 The transformed model explains about **64% of the variation in log-salary**
 (adjusted R² = 0.638) and is highly significant overall (*F* = 34.1 on 24 and
-427 df, *p* < 10⁻¹⁶) — a clear gain over the raw-scale reference, and a step
+427 df, *p* < 2.2 x 10⁻¹⁶) - a clear gain over the raw-scale reference, and a step
 up from the same design without `is_local` (adjusted R² = 0.619).
 
 ### Re-checking the assumptions after the transformation
@@ -600,8 +586,8 @@ records and the final model choice belong to Task 6. To close the modeling
 here, the table below summarizes how well each specification fits the 452
 training rows. Because every model except the power transform shares
 `log_salary` as its response, their R² and adjusted R² are directly
-comparable on the log scale. AIC — which rewards fit while penalizing
-parameter count — is reported for the three ordinary least-squares fits
+comparable on the log scale. AIC - which rewards fit while penalizing
+parameter count - is reported for the three ordinary least-squares fits
 where it is defined; it is not defined for the penalty-regularized
 Ridge/LASSO/elastic-net fits, whose effective parameter count is not the
 number of columns.
@@ -649,8 +635,8 @@ cat("held-out comparison across scales is deferred to Task 6.\n")
 ```
 
 Three points follow. First, the **stepwise-reduced model matches the full
-model on training data** — equal adjusted R² (0.638) at a slightly lower AIC
-(652.5 vs 654.5) with one fewer parameter — so the pruning costs no in-sample
+model on training data** - equal adjusted R² (0.638) at a slightly lower AIC
+(652.5 vs 654.5) with one fewer parameter - so the pruning costs no in-sample
 fit while removing the marginal survey-year trend, the qualitative conclusion
 of Section 4.2. Second, the **regularized fits show essentially identical
 training R² to the OLS variants** (all in the range 0.651–0.657), as

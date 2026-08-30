@@ -67,7 +67,7 @@ ggplot(data, aes(x = experience_level, y = log_salary,
        color = "Company Size")
 ```
 
-Looking at the chart, the lines representing different company sizes clearly cross each other—most noticeably between the Entry-level (EN) and Mid-level (MI) stages. This visually illustrates exactly why our initial ANOVA flagged the interaction as significant. The model is seeing these crossing paths and interpreting them as a complex relationship.
+Looking at the chart, the lines representing different company sizes clearly cross each other - most noticeably between the Entry-level (EN) and Mid-level (MI) stages. This visually illustrates exactly why our initial ANOVA flagged the interaction as significant. The model is seeing these crossing paths and interpreting them as a complex relationship.
 
 ### 3.2 Assumption Checking
 
@@ -157,7 +157,7 @@ se_comparison <- data.frame(
 head(round(se_comparison, 3), 6)
 ```
 
-To prove why the Robust ANOVA is necessary, we extracted the Standard Errors (SE) from both models. In the standard model, the variance is pooled, artificially deflating the SE for highly variable groups. For example, the standard model assigns the Executive group an SE of roughly 0.40. However, the Robust model (using the HC3 sandwich estimator) calculates the true SE for Executives as 0.67—an underestimation of over 66% by the standard model! Because the standard ANOVA vastly underestimated the error margins of our outlier-heavy groups, it became falsely confident, triggering a Type I error (a false positive interaction). The Robust ANOVA uses the correct, larger standard errors, yielding mathematically trustworthy $p$-values.
+To prove why the Robust ANOVA is necessary, we extracted the Standard Errors (SE) from both models. In the standard model, the variance is pooled, artificially deflating the SE for highly variable groups. For example, the standard model assigns the Executive group an SE of roughly 0.40. However, the Robust model (using the HC3 sandwich estimator) calculates the true SE for Executives as 0.67 - an underestimation of over 66% by the standard model! Because the standard ANOVA vastly underestimated the error margins of our outlier-heavy groups, it became falsely confident, triggering a Type I error (a false positive interaction). The Robust ANOVA uses the correct, larger standard errors, yielding mathematically trustworthy $p$-values.
 
 ### 3.4 Salary Trends Over Time (Work Year)
 

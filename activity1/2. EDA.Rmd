@@ -3,6 +3,10 @@ title: "Activity 1 — Task 2: Exploratory Data Analysis"
 author: "Group 08"
 date: "2026-08-16"
 output:
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
   pdf_document:
     latex_engine: xelatex
     toc: true
