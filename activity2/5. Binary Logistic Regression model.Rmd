@@ -24,7 +24,11 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 
 ## 5.1 Research Question and Data Preparation
 
-This final task addresses the third research question for Activity 2: **Which personal factors (age, gender, family history) and environmental factors (employer prioritization, coworker reactions) increase or decrease the probability of an employee seeking professional mental health treatment? How accurately can a model classify those who need treatment?**
+This final task addresses **Research Question 2 (RQ2)** for Activity 2:
+**Which personal factors (age, gender, family history) and environmental
+factors (employer prioritization, coworker reactions, and technology-company
+status) affect the probability of seeking professional mental-health treatment,
+and how accurately can a model classify treatment-seeking respondents?**
 
 Because the target variable (`Treatment_Cat`) is binary (Yes/No), we employ a Binary Logistic Regression model.
 
@@ -43,7 +47,7 @@ data <- data %>%
   mutate(
     Treatment_Cat = factor(Treatment_Cat, levels = c("No", "Yes")),
     Gender_Category = relevel(factor(Gender_Category), ref = "Male"),
-    Family_History = relevel(factor(Family_History), ref = "No"),
+    Family_History = relevel(factor(Family_History), ref = "I don't know"),
     Tech_Company_Cat = relevel(factor(Tech_Company_Cat), ref = "No")
   )
 
@@ -57,46 +61,101 @@ cat("Training cases:", nrow(train), "| Test cases:", nrow(test), "\n")
 
 ## 5.2 Model Fitting and Odds Ratios
 
-We fit the logistic regression model on the training set using both demographic and corporate environment predictors.
+We fit the logistic regression model on the training set using the seven
+specified demographic and workplace predictor groups. The reference groups are
+No treatment, Male gender, unknown family history, and a non-technology
+company.
 
 ```{r}
 logit_model <- glm(
   Treatment_Cat ~ Age + Gender_Category + Family_History + 
     Employer_Mental_Importance + Employer_Phys_Importance + 
-    Coworker_Reaction_Score + Tech_Company_Cat + as.factor(Year),
+    Coworker_Reaction_Score + Tech_Company_Cat,
   family = binomial(link = "logit"),
   data = train
 )
 
-# Extract Odds Ratios (OR) and Confidence Intervals
-model_matrix <- summary(logit_model)$coefficients
+# Extract coefficients, odds ratios, p-values, and 95% Wald confidence
+# intervals directly from the fitted model.
 wald_ci <- confint.default(logit_model)
+model_tidy <- broom::tidy(logit_model)
 
-odds_ratios <- tibble(
-  Predictor = rownames(model_matrix),
-  Estimate = model_matrix[, "Estimate"],
-  `Odds Ratio (OR)` = exp(Estimate),
-  `P-value` = model_matrix[, "Pr(>|z|)"],
-  Significant = `P-value` < 0.05
-) %>%
-  filter(Predictor != "(Intercept)") %>%
+odds_ratios <- model_tidy %>%
+  filter(term != "(Intercept)") %>%
   mutate(
-    across(c(Estimate, `Odds Ratio (OR)`), ~ round(.x, 3)),
-    `P-value` = format.pval(`P-value`, digits = 3, eps = 0.001)
-  )
+    conf_low = wald_ci[term, 1],
+    conf_high = wald_ci[term, 2],
+    Predictor = dplyr::case_when(
+      term == "Age" ~ "Age",
+      term == "Gender_CategoryFemale" ~ "Gender: Female",
+      term == "Gender_CategoryOther" ~ "Gender: Other",
+      term == "Family_HistoryNo" ~ "Family history: No",
+      term == "Family_HistoryYes" ~ "Family history: Yes",
+      term == "Employer_Mental_Importance" ~ "Employer mental importance",
+      term == "Employer_Phys_Importance" ~ "Employer physical importance",
+      term == "Coworker_Reaction_Score" ~ "Coworker reaction score",
+      term == "Tech_Company_CatYes" ~ "Technology company",
+      TRUE ~ term
+    ),
+    `Odds Ratio (OR)` = exp(estimate),
+    `95% CI for OR` = sprintf("%.3f to %.3f", exp(conf_low), exp(conf_high)),
+    Significant = p.value < 0.05,
+    Estimate = round(estimate, 3),
+    `Odds Ratio (OR)` = round(`Odds Ratio (OR)`, 3),
+    `P-value` = if_else(p.value < 0.001, "< 0.001", sprintf("%.3f", p.value))
+  ) %>%
+  select(Predictor, Estimate, `Odds Ratio (OR)`, `95% CI for OR`, `P-value`, Significant)
 
 knitr::kable(odds_ratios, caption = "Adjusted Odds Ratios for Seeking Treatment")
+
+term_stat <- function(model_term, statistic) {
+  model_tidy %>% filter(.data$term == model_term) %>% pull({{ statistic }})
+}
+fmt3 <- function(x) format(round(x, 3), nsmall = 3)
+
+age_or <- exp(term_stat("Age", estimate))
+age_p <- term_stat("Age", p.value)
+female_or <- exp(term_stat("Gender_CategoryFemale", estimate))
+female_p <- term_stat("Gender_CategoryFemale", p.value)
+other_or <- exp(term_stat("Gender_CategoryOther", estimate))
+other_p <- term_stat("Gender_CategoryOther", p.value)
+family_no_beta <- term_stat("Family_HistoryNo", estimate)
+family_no_or <- exp(family_no_beta)
+family_no_p <- term_stat("Family_HistoryNo", p.value)
+family_yes_beta <- term_stat("Family_HistoryYes", estimate)
+family_yes_or <- exp(family_yes_beta)
+family_yes_p <- term_stat("Family_HistoryYes", p.value)
+family_yes_vs_no_or <- family_yes_or / family_no_or
 ```
 
 ### What drives the decision to seek treatment?
 
 By examining the **Odds Ratios (OR)**, where $OR > 1$ indicates increased probability and $OR < 1$ indicates decreased probability, we uncover a fascinating divide between personal and environmental factors:
 
-- **Personal Family History Dominates:** The strongest predictor by a massive margin is personal biology. Employees with a known family history of mental illness have incredibly high odds of seeking treatment compared to those without. Age also shows a slight, statistically significant positive correlation ($OR = 1.024$, $p = 0.013$). Gender shows a smaller but still significant association: Female employees have higher odds of seeking treatment than Male employees ($OR = 1.644$, $p = 0.008$), while the Other category does not differ from Male.
+- **Family History Is the Strongest Predictor:** Relative to respondents who
+  answered "I don't know," respondents answering No have substantially lower
+  odds of seeking treatment ($\beta \approx$ `r fmt3(family_no_beta)`,
+  $OR \approx$ `r fmt3(family_no_or)`, $p$ `r if (family_no_p < 0.001) "< 0.001" else paste0("= ", fmt3(family_no_p))`), while those answering Yes have substantially higher odds
+  ($\beta \approx$ `r fmt3(family_yes_beta)`, $OR \approx$ `r fmt3(family_yes_or)`,
+  $p$ `r if (family_yes_p < 0.001) "< 0.001" else paste0("= ", fmt3(family_yes_p))`). The implied
+  adjusted Yes-versus-No odds ratio is approximately `r fmt3(family_yes_or)` /
+  `r fmt3(family_no_or)` = `r fmt3(family_yes_vs_no_or)`.
+  Age also has a small, statistically significant positive association
+  ($OR \approx$ `r fmt3(age_or)`, $p = `r fmt3(age_p)`): each additional year is associated with
+  about `r round((age_or - 1) * 100, 1)`% increase in the odds of seeking treatment, holding the other
+  variables constant. Female respondents have significantly higher odds than
+  Male respondents ($OR \approx$ `r fmt3(female_or)`, $p = `r fmt3(female_p)`);
+  the Other category does not significantly differ from Male ($OR \approx
+  `r fmt3(other_or)`, $p = `r fmt3(other_p)`).
 
-- **Environmental Factors are Weak:** Surprisingly, workplace variables have almost zero impact on the individual's decision to seek clinical help. The importance the employer places on mental/physical health, the tech-company status, and even the coworker reaction score all yielded non-significant p-values.
+- **Workplace Factors Are Not Statistically Significant:** Employer
+  mental-health importance, employer physical-health importance, coworker
+  reaction score, and technology-company status are not statistically
+  significant at the 5% level in this model.
 
-In short: **The decision to seek professional treatment is driven primarily by family history, with smaller contributions from age and female gender, and essentially none from corporate policy.**
+In short: **family history is the dominant predictor, with smaller positive
+associations for age and Female gender; the measured workplace/environmental
+factors do not show statistically significant associations at the 5% level.**
 
 ## 5.3 Out-of-Sample Classification Performance
 
@@ -130,15 +189,19 @@ plot(roc_curve, col = "firebrick", lwd = 2,
      main = paste("ROC Curve (Test Set) - AUC =", round(auc_value, 3)))
 ```
 
-### Conclusion for Research Question 3
+### Conclusion for Research Question 2
 
-The model successfully identifies whether an employee will seek professional mental health treatment with an overall **Accuracy of `r round(acc_val * 100, 1)`%** on completely unseen data.
+The model classifies treatment-seeking respondents with an overall **Accuracy
+of `r round(acc_val * 100, 1)`%** on the 211 completely unseen test
+observations.
 
 More importantly, the **ROC-AUC score is `r round(auc_value, 3)`**. This means that if we randomly select one employee who sought treatment and one who did not, the model has an `r round(auc_value * 100, 1)`% probability of correctly ranking the treatment-seeker with a higher risk score.
 
-The precision (`r round(prec_val, 3)`) and recall (`r round(rec_val, 3)`) demonstrate a well-balanced classifier that doesn't just guess "Yes" for everyone.
+The precision (`r round(prec_val, 3)`) and recall (`r round(rec_val, 3)`) show
+that the classifier identifies treatment-seeking respondents reasonably well at
+the 0.5 probability threshold.
 
-**Final Answer:** We can classify treatment-seekers with high accuracy ($\approx$ `r round(acc_val * 100, 1)`%). The analysis proves that the decision to seek treatment is profoundly driven by **personal biology** (specifically family history), with smaller positive associations for **age and female gender**, while corporate environmental factors (like supportive coworkers or HR policies) fail to statistically alter an employee's underlying probability of seeking professional medical care.
+**Final Answer:** The logistic model achieves approximately `r round(acc_val * 100, 1)`% accuracy and a ROC-AUC of `r round(auc_value, 3)`, indicating moderate discrimination. Family history is the strongest predictor; age has a small but statistically significant positive association, and Female respondents have significantly higher odds of seeking treatment than Male respondents. The workplace/environmental variables in this model are not statistically significant at the 5% level.
 
 ## 5.4 Random Forest Benchmark
 
