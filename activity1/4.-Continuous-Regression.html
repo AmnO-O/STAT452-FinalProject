@@ -2370,7 +2370,7 @@ cat(&quot;Selected elastic-net alpha:&quot;, alpha_best,
     sum(as.numeric(coef(cv_elastic, s = &quot;lambda.min&quot;))[-1] != 0), &quot;/&quot;, ncol(x_train), &quot;\n&quot;)</code></pre>
 <pre><code>## Selected elastic-net alpha: 0.1 | predictor columns kept at lambda.min: 20 / 21</code></pre>
 <p>Sweeping the mixing parameter across its full range (<span class="math inline">\(\alpha\)</span> = 0, 0.1, …, 1) moves the
-cross-validated error by about 0.08%, and nearly every column survives
+cross-validated error by about 0.16%, and nearly every column survives
 at <span class="math inline">\(\lambda_{\min}\)</span> (19–21 of the 21
 columns), with the flat <code>work_year_ts</code> and
 <code>location_groupES</code> effects the only ones ever shrunk all the

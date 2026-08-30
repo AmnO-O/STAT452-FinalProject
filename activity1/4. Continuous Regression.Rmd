@@ -516,7 +516,7 @@ cat("Selected elastic-net alpha:", alpha_best,
 ```
 
 Sweeping the mixing parameter across its full range ($\alpha$ = 0, 0.1, …, 1)
-moves the cross-validated error by about 0.08%, and nearly every column
+moves the cross-validated error by about 0.16%, and nearly every column
 survives at $\lambda_{\min}$ (19–21 of the 21 columns), with the flat
 `work_year_ts` and `location_groupES` effects the only ones ever shrunk all
 the way to zero. With the surface this flat there is no meaningful interior
