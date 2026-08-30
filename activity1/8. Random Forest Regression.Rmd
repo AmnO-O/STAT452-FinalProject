@@ -121,7 +121,7 @@ importance_df <- importance(rf_model) %>%
   as.data.frame() %>%
   rownames_to_column("Variable") %>%
   arrange(desc(`%IncMSE`)) %>%
-  select(Variable, `%IncMSE`, `IncNodePurity`)
+  dplyr::select(Variable, `%IncMSE`, `IncNodePurity`)
 knitr::kable(importance_df, digits = 3,
              caption = "Random Forest variable importance (mean decrease in MSE)")
 ```
@@ -160,7 +160,7 @@ knitr::kable(comparison %>% mutate(across(c(RMSE_usd, MAE_usd), ~ round(.x, 2)))
              caption = "All continuous models ranked by out-of-sample USD RMSE")
 ```
 
-The Random Forest achieves the **lowest out-of-sample RMSE** of approximately `r format(round(rmse_usd), big.mark=",")` USD and the **highest R²** of `r round(r2_usd, 3)`, outperforming Ridge regression (`r format(round(42644), big.mark=",")` USD RMSE, R² = `r round(0.508, 3)`) by roughly `r format(round(42644 - rmse_usd), big.mark=",")` USD. The improvement is about 4.2% in RMSE — a meaningful gain from adding a non-linear, interaction-aware model.
+The Random Forest achieves the **lowest out-of-sample RMSE** of approximately `r format(round(rmse_usd), big.mark=",")` USD and the **highest R²** of `r round(r2_usd, 3)`, outperforming Ridge regression (`r format(round(42280), big.mark=",")` USD RMSE, R² = `r round(0.517, 3)`) by roughly `r format(round(1432- rmse_usd), big.mark=",")` USD. The improvement is about 3.4% in RMSE — a meaningful gain from adding a non-linear, interaction-aware model.
 
 The Random Forest's key advantage is its ability to capture non-linearities and interactions without explicit specification, which Ridge cannot do. However, it does not provide interpretable coefficients — the variable importance plot (§8.5) is the substitute for the percentage-effect table in the OLS model.
 
