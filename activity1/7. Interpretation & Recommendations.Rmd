@@ -39,6 +39,7 @@ own fitted models produced.
 library(tidyverse)
 library(broom)
 library(knitr)
+library(pROC)
 
 data  <- read.csv("dataset/ds_salaries_clean.csv")
 train <- read.csv("dataset/train_data.csv")
@@ -69,13 +70,50 @@ The context table from Task 6 is repeated here so every number cited below is
 traceable:
 
 ```{r metrics-recap}
-knitr::kable(cmp %>% arrange(RMSE_usd),
-             caption = "Continuous candidates ranked by out-of-sample USD RMSE (Task 6)")
+# Recompute the Task 6 out-of-sample metrics on the same partition so this
+# recap cannot drift from Task 6's own printed output.
+q3_salary <- as.numeric(quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE))
+
+prepare_metrics_data <- function(df) {
+  df %>%
+    mutate(
+      is_top_tier = if_else(salary_in_usd >= q3_salary, 1L, 0L),
+      experience_level = factor(experience_level, levels = c("EN", "MI", "SE", "EX")),
+      company_size = factor(company_size, levels = c("S", "M", "L")),
+      remote_ratio = factor(remote_ratio, levels = c(0, 50, 100)),
+      job_category = relevel(factor(job_category), ref = "Data_Analyst"),
+      employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"),
+                                levels = c("FT", "Non_FT")),
+      company_location_group = factor(if_else(location_group == "US", "US", "Non_US"),
+                                      levels = c("Non_US", "US"))
+    )
+}
+train_for_metrics <- prepare_metrics_data(train)
+test_for_metrics  <- prepare_metrics_data(test)
+
+logit_metrics <- glm(is_top_tier ~ experience_level + company_size + remote_ratio +
+                       job_category + employment_group + company_location_group,
+                     family = binomial(link = "logit"), data = train_for_metrics)
+
+test_probs <- predict(logit_metrics, newdata = test_for_metrics, type = "response")
+test_preds <- if_else(test_probs >= 0.5, 1L, 0L)
+actual     <- test_for_metrics$is_top_tier
+
+tn_m <- sum(test_preds == 0L & actual == 0L); fp_m <- sum(test_preds == 1L & actual == 0L)
+fn_m <- sum(test_preds == 0L & actual == 1L); tp_m <- sum(test_preds == 1L & actual == 1L)
+acc_m <- (tp_m + tn_m) / length(actual)
+prec_m <- tp_m / (tp_m + fp_m)
+rec_m  <- tp_m / (tp_m + fn_m)
+f1_m   <- 2 * prec_m * rec_m / (prec_m + rec_m)
+auc_m  <- as.numeric(auc(roc(actual, test_probs, quiet = TRUE)))
 
 logistic_metrics <- tibble(
-  Metric  = c("Accuracy", "Precision", "Recall (Sensitivity)", "F1-Score", "ROC-AUC"),
-  Value   = c(0.761, 0.533, 0.552, 0.542, 0.812)
+  Metric = c("Accuracy", "Precision", "Recall (Sensitivity)", "F1-Score", "ROC-AUC"),
+  Value  = round(c(acc_m, prec_m, rec_m, f1_m, auc_m), 3)
 )
+
+knitr::kable(cmp %>% arrange(RMSE_usd),
+             caption = "Continuous candidates ranked by out-of-sample USD RMSE (Task 6)")
 knitr::kable(logistic_metrics,
              caption = "Out-of-sample classification metrics of the logistic model (Task 6)")
 ```

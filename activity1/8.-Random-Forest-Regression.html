@@ -13,7 +13,7 @@
 
 <meta name="date" content="2026-08-30" />
 
-<title>Activity 1 — Task 7: Interpretation and Recommendations</title>
+<title>Activity 1 — Task 8: Random Forest Regression</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -1693,8 +1693,8 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Activity 1 — Task 7: Interpretation and
-Recommendations</h1>
+<h1 class="title toc-ignore">Activity 1 — Task 8: Random Forest
+Regression</h1>
 <h4 class="author">Group 08</h4>
 <h4 class="date">2026-08-30</h4>
 
@@ -1702,65 +1702,236 @@ Recommendations</h1>
 
 <div id="TOC">
 <ul>
-<li><a href="#interpretation-and-recommendations" id="toc-interpretation-and-recommendations">7 Interpretation and
-Recommendations</a>
+<li><a href="#random-forest-regression" id="toc-random-forest-regression">8 Random Forest Regression</a>
 <ul>
-<li><a href="#feature-importance-interpretation" id="toc-feature-importance-interpretation">7.1 Feature importance
-interpretation</a></li>
-<li><a href="#avenues-for-model-improvement" id="toc-avenues-for-model-improvement">7.2 Avenues for model
-improvement</a></li>
+<li><a href="#training-and-testing-partitions" id="toc-training-and-testing-partitions">8.1 Training and testing
+partitions</a></li>
+<li><a href="#model-specification" id="toc-model-specification">8.2
+Model specification</a></li>
+<li><a href="#in-sample-fit" id="toc-in-sample-fit">8.3 In-sample
+fit</a></li>
+<li><a href="#out-of-sample-evaluation" id="toc-out-of-sample-evaluation">8.4 Out-of-sample evaluation</a></li>
+<li><a href="#variable-importance" id="toc-variable-importance">8.5
+Variable importance</a></li>
+<li><a href="#actual-vs.-predicted-plot" id="toc-actual-vs.-predicted-plot">8.6 Actual vs. predicted
+plot</a></li>
+<li><a href="#comparison-with-all-continuous-models" id="toc-comparison-with-all-continuous-models">8.7 Comparison with all
+continuous models</a></li>
+<li><a href="#conclusion" id="toc-conclusion">8.8 Conclusion</a></li>
 </ul></li>
 </ul>
 </div>
 
-<p>This task closes the modeling loop of Activity 1. Task 6 already
-selected a “best” model for each research question; here we do two
-things the requirement asks for. First, we interpret which features
-actually drive Data Science pay (§7.1) and check whether the three
-independent methods used — continuous regression, binary logistic
-regression, and factorial ANOVA — agree on the same drivers. Second, we
-propose concrete avenues for improving predictive performance (§7.2),
-each grounded in a limitation that our own model outputs exposed rather
-than in generic machine-learning advice.</p>
-<p>We deliberately reuse the exact partitions, encodings, and results of
-Tasks 3–6. No model is re-evaluated on the held-out test set here beyond
-what Tasks 4–6 already did; the recommender narrative below simply reads
-the numbers that our own fitted models produced.</p>
+<p>This task builds a <strong>Random Forest regression</strong> model to
+predict <code>log_salary</code>, using the exact same 80:20 train/test
+split and preprocessing pipeline as Tasks 4 and 6. The purpose is to
+evaluate whether a non-parametric tree-based method can outperform the
+Ridge regression model selected as the best continuous predictor in Task
+6.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(knitr)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(randomForest)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(caret)</span>
 <span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>data  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/ds_salaries_clean.csv&quot;</span>)</span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>train <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/train_data.csv&quot;</span>)</span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>test  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/test_data.csv&quot;</span>)</span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>cmp   <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;task04_model_comparison.csv&quot;</span>)</span></code></pre></div>
-<div id="interpretation-and-recommendations" class="section level1">
-<h1>7 Interpretation and Recommendations</h1>
-<div id="feature-importance-interpretation" class="section level2">
-<h2>7.1 Feature importance interpretation</h2>
-<div id="one-model-to-predict-one-model-to-interpret" class="section level3">
-<h3>7.1.1 One model to predict, one model to interpret</h3>
-<p>Task 6 chose the <strong>Ridge regression</strong> as the best
-continuous predictor on the held-out test set (the Box–Cox power model
-finished a hair behind), and the <strong>binary logistic model</strong>
-as the best classifier for the top-25% target. The Ridge winner achieves
-its accuracy by shrinking coefficients and therefore has no clean
-coefficient table to read. For feature-importance interpretation we
-deliberately read its in-sample sibling: the <strong>log-salary
-regression</strong> selected by AIC stepwise in Task 4 (§4.2). Its
-coefficients translate directly into percentage effects via <span class="math inline">\(100(e^{\hat\beta}-1)\)</span> — a view that
-neither the Ridge winner nor the power model offers on their respective
-penalized and <span class="math inline">\(\text{salary}^{0.26}\)</span>
-scales. Ridge and the stepwise OLS share the same predictors and the
-same training records, so reading the stepwise table for substance does
-not change the story.</p>
-<p>The context table from Task 6 is repeated here so every number cited
-below is traceable:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(cmp <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd),</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Continuous candidates ranked by out-of-sample USD RMSE (Task 6)&quot;</span>)</span></code></pre></div>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/ds_salaries_clean.csv&quot;</span>)</span></code></pre></div>
+<div id="random-forest-regression" class="section level1">
+<h1>8 Random Forest Regression</h1>
+<div id="training-and-testing-partitions" class="section level2">
+<h2>8.1 Training and testing partitions</h2>
+<p>The same seeded global random 80:20 split (seed = 2026) used
+throughout Activity 1 is applied: 452 training observations and 113
+held-out test observations.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2026</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>data<span class="sc">$</span>experience_level <span class="ot">&lt;-</span> <span class="fu">factor</span>(data<span class="sc">$</span>experience_level, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;EN&quot;</span>, <span class="st">&quot;MI&quot;</span>, <span class="st">&quot;SE&quot;</span>, <span class="st">&quot;EX&quot;</span>))</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>data<span class="sc">$</span>company_size     <span class="ot">&lt;-</span> <span class="fu">factor</span>(data<span class="sc">$</span>company_size,     <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;S&quot;</span>, <span class="st">&quot;M&quot;</span>, <span class="st">&quot;L&quot;</span>))</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>data<span class="sc">$</span>employment_type  <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(data<span class="sc">$</span>employment_type), <span class="at">ref =</span> <span class="st">&quot;FT&quot;</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>data<span class="sc">$</span>job_category     <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(data<span class="sc">$</span>job_category),   <span class="at">ref =</span> <span class="st">&quot;Data_Analyst&quot;</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>data<span class="sc">$</span>location_group   <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(data<span class="sc">$</span>location_group), <span class="at">ref =</span> <span class="st">&quot;Other&quot;</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>data <span class="ot">&lt;-</span> data <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="at">row_id =</span> <span class="fu">row_number</span>())</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>check_vars <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">&quot;employment_type&quot;</span>, <span class="st">&quot;job_category&quot;</span>, <span class="st">&quot;location_group&quot;</span>,</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>                 <span class="st">&quot;experience_level&quot;</span>, <span class="st">&quot;company_size&quot;</span>)</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="cf">repeat</span> {</span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  idx <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">nrow</span>(data), <span class="fu">floor</span>(<span class="fl">0.8</span> <span class="sc">*</span> <span class="fu">nrow</span>(data)))</span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>  tr  <span class="ot">&lt;-</span> data[idx, ]</span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a>  te  <span class="ot">&lt;-</span> data[<span class="sc">-</span>idx, ]</span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a>  ok  <span class="ot">&lt;-</span> <span class="fu">all</span>(<span class="fu">vapply</span>(check_vars,</span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a>                      <span class="cf">function</span>(v) <span class="fu">all</span>(<span class="fu">unique</span>(te[[v]]) <span class="sc">%in%</span> <span class="fu">unique</span>(tr[[v]])), <span class="fu">logical</span>(<span class="dv">1</span>)))</span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a>  <span class="cf">if</span> (ok) <span class="cf">break</span></span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a>}</span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a>train <span class="ot">&lt;-</span> tr</span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a>test  <span class="ot">&lt;-</span> te</span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a><span class="fu">stopifnot</span>(<span class="fu">nrow</span>(train) <span class="sc">==</span> <span class="dv">452</span>, <span class="fu">nrow</span>(test) <span class="sc">==</span> <span class="dv">113</span>,</span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a>          <span class="fu">all</span>(<span class="sc">!</span>test<span class="sc">$</span>row_id <span class="sc">%in%</span> train<span class="sc">$</span>row_id))</span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Training set:&quot;</span>, <span class="fu">nrow</span>(train), <span class="st">&quot;rows | Test set:&quot;</span>, <span class="fu">nrow</span>(test), <span class="st">&quot;rows</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## Training set: 452 rows | Test set: 113 rows</code></pre>
+</div>
+<div id="model-specification" class="section level2">
+<h2>8.2 Model specification</h2>
+<p>Random Forest is a non-parametric ensemble of decision trees. It
+requires no feature scaling, no assumption about linearity or
+homoskedasticity, and automatically captures non-linear relationships
+and interactions. The model is fitted with 500 trees on the full set of
+predictors:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>rf_model <span class="ot">&lt;-</span> <span class="fu">randomForest</span>(</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  log_salary <span class="sc">~</span> experience_level <span class="sc">+</span> job_category <span class="sc">+</span> employment_type <span class="sc">+</span></span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>    company_size <span class="sc">+</span> location_group <span class="sc">+</span> remote_ratio <span class="sc">+</span> work_year <span class="sc">+</span> is_local,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">data =</span> train,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">ntree =</span> <span class="dv">500</span>,</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">importance =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="at">seed =</span> <span class="dv">2026</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>)</span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="fu">print</span>(rf_model)</span></code></pre></div>
+<pre><code>## 
+## Call:
+##  randomForest(formula = log_salary ~ experience_level + job_category +      employment_type + company_size + location_group + remote_ratio +      work_year + is_local, data = train, ntree = 500, importance = TRUE,      seed = 2026) 
+##                Type of random forest: regression
+##                      Number of trees: 500
+## No. of variables tried at each split: 2
+## 
+##           Mean of squared residuals: 0.2786944
+##                     % Var explained: 56.93</code></pre>
+<p>The model uses <code>mtry = 2</code> variables at each split (the
+default <code>floor(p/3)</code> for regression, where <code>p</code> = 8
+numeric predictors after encoding).</p>
+</div>
+<div id="in-sample-fit" class="section level2">
+<h2>8.3 In-sample fit</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;In-sample R-squared (training):&quot;</span>, <span class="fu">round</span>(<span class="dv">1</span> <span class="sc">-</span> rf_model<span class="sc">$</span>mse[rf_model<span class="sc">$</span>ntree] <span class="sc">/</span> <span class="fu">var</span>(train<span class="sc">$</span>log_salary), <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## In-sample R-squared (training): 0.5703</code></pre>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Mean squared residuals (training):&quot;</span>, <span class="fu">round</span>(rf_model<span class="sc">$</span>mse[rf_model<span class="sc">$</span>ntree], <span class="dv">6</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## Mean squared residuals (training): 0.278694</code></pre>
+<p>The in-sample R² is 0.570, slightly higher than the stepwise OLS
+model’s 0.638 adjusted R² — but note that <code>log_salary</code>
+variance is on the log scale, so direct comparison with R² on the raw
+dollar scale in Task 6 is not meaningful. What matters is the
+out-of-sample performance.</p>
+</div>
+<div id="out-of-sample-evaluation" class="section level2">
+<h2>8.4 Out-of-sample evaluation</h2>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>pred_test <span class="ot">&lt;-</span> <span class="fu">predict</span>(rf_model, <span class="at">newdata =</span> test)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>rmse_log <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">mean</span>((test<span class="sc">$</span>log_salary <span class="sc">-</span> pred_test)<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>mae_log  <span class="ot">&lt;-</span> <span class="fu">mean</span>(<span class="fu">abs</span>(test<span class="sc">$</span>log_salary <span class="sc">-</span> pred_test))</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>r2_log   <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">sum</span>((test<span class="sc">$</span>log_salary <span class="sc">-</span> pred_test)<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> <span class="fu">sum</span>((test<span class="sc">$</span>log_salary <span class="sc">-</span> <span class="fu">mean</span>(test<span class="sc">$</span>log_salary))<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>rmse_usd <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">mean</span>((test<span class="sc">$</span>salary_in_usd <span class="sc">-</span> <span class="fu">exp</span>(pred_test))<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a>mae_usd  <span class="ot">&lt;-</span> <span class="fu">mean</span>(<span class="fu">abs</span>(test<span class="sc">$</span>salary_in_usd <span class="sc">-</span> <span class="fu">exp</span>(pred_test)))</span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a>r2_usd   <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">-</span> <span class="fu">sum</span>((test<span class="sc">$</span>salary_in_usd <span class="sc">-</span> <span class="fu">exp</span>(pred_test))<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> <span class="fu">sum</span>((test<span class="sc">$</span>salary_in_usd <span class="sc">-</span> <span class="fu">mean</span>(test<span class="sc">$</span>salary_in_usd))<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;=== Random Forest Test Set Performance ===</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## === Random Forest Test Set Performance ===</code></pre>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;RMSE (log scale):&quot;</span>, <span class="fu">round</span>(rmse_log, <span class="dv">6</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## RMSE (log scale): 0.482106</code></pre>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;MAE  (log scale):&quot;</span>, <span class="fu">round</span>(mae_log, <span class="dv">6</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## MAE  (log scale): 0.339681</code></pre>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;R2   (log scale):&quot;</span>, <span class="fu">round</span>(r2_log, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## R2   (log scale): 0.5601</code></pre>
+<div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;RMSE (USD):&quot;</span>, <span class="fu">round</span>(rmse_usd, <span class="dv">2</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## RMSE (USD): 40848.1</code></pre>
+<div class="sourceCode" id="cb20"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;MAE  (USD):&quot;</span>, <span class="fu">round</span>(mae_usd, <span class="dv">2</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## MAE  (USD): 30081.87</code></pre>
+<div class="sourceCode" id="cb22"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;R2   (USD):&quot;</span>, <span class="fu">round</span>(r2_usd, <span class="dv">4</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
+<pre><code>## R2   (USD): 0.5489</code></pre>
+</div>
+<div id="variable-importance" class="section level2">
+<h2>8.5 Variable importance</h2>
+<div class="sourceCode" id="cb24"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" tabindex="-1"></a>importance_df <span class="ot">&lt;-</span> <span class="fu">importance</span>(rf_model) <span class="sc">%&gt;%</span></span>
+<span id="cb24-2"><a href="#cb24-2" tabindex="-1"></a>  <span class="fu">as.data.frame</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb24-3"><a href="#cb24-3" tabindex="-1"></a>  <span class="fu">rownames_to_column</span>(<span class="st">&quot;Variable&quot;</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb24-4"><a href="#cb24-4" tabindex="-1"></a>  <span class="fu">arrange</span>(<span class="fu">desc</span>(<span class="st">`</span><span class="at">%IncMSE</span><span class="st">`</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb24-5"><a href="#cb24-5" tabindex="-1"></a>  <span class="fu">select</span>(Variable, <span class="st">`</span><span class="at">%IncMSE</span><span class="st">`</span>, <span class="st">`</span><span class="at">IncNodePurity</span><span class="st">`</span>)</span>
+<span id="cb24-6"><a href="#cb24-6" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(importance_df, <span class="at">digits =</span> <span class="dv">3</span>,</span>
+<span id="cb24-7"><a href="#cb24-7" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Random Forest variable importance (mean decrease in MSE)&quot;</span>)</span></code></pre></div>
+<table>
+<caption>Random Forest variable importance (mean decrease in
+MSE)</caption>
+<thead>
+<tr class="header">
+<th align="left">Variable</th>
+<th align="right">%IncMSE</th>
+<th align="right">IncNodePurity</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">location_group</td>
+<td align="right">50.267</td>
+<td align="right">87.276</td>
+</tr>
+<tr class="even">
+<td align="left">experience_level</td>
+<td align="right">29.024</td>
+<td align="right">44.148</td>
+</tr>
+<tr class="odd">
+<td align="left">employment_type</td>
+<td align="right">17.179</td>
+<td align="right">15.636</td>
+</tr>
+<tr class="even">
+<td align="left">is_local</td>
+<td align="right">13.991</td>
+<td align="right">9.734</td>
+</tr>
+<tr class="odd">
+<td align="left">job_category</td>
+<td align="right">13.508</td>
+<td align="right">26.062</td>
+</tr>
+<tr class="even">
+<td align="left">work_year</td>
+<td align="right">10.755</td>
+<td align="right">13.230</td>
+</tr>
+<tr class="odd">
+<td align="left">company_size</td>
+<td align="right">9.857</td>
+<td align="right">15.178</td>
+</tr>
+<tr class="even">
+<td align="left">remote_ratio</td>
+<td align="right">2.710</td>
+<td align="right">9.881</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb25"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" tabindex="-1"></a><span class="fu">png</span>(<span class="st">&quot;task08_rf_variable_importance.png&quot;</span>, <span class="at">width =</span> <span class="dv">800</span>, <span class="at">height =</span> <span class="dv">600</span>)</span>
+<span id="cb25-2"><a href="#cb25-2" tabindex="-1"></a><span class="fu">varImpPlot</span>(rf_model, <span class="at">main =</span> <span class="st">&quot;Random Forest - Variable Importance (% IncMSE)&quot;</span>,</span>
+<span id="cb25-3"><a href="#cb25-3" tabindex="-1"></a>           <span class="at">col =</span> <span class="st">&quot;steelblue&quot;</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
+<span id="cb25-4"><a href="#cb25-4" tabindex="-1"></a><span class="fu">dev.off</span>()</span></code></pre></div>
+<pre><code>## png 
+##   2</code></pre>
+<p><code>location_group</code> (country) is by far the most important
+predictor, followed by <code>experience_level</code>. This aligns
+perfectly with the regression and logistic findings — geography and
+seniority dominate salary determination.</p>
+</div>
+<div id="actual-vs.-predicted-plot" class="section level2">
+<h2>8.6 Actual vs. predicted plot</h2>
+<div class="sourceCode" id="cb27"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" tabindex="-1"></a>plot_df <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb27-2"><a href="#cb27-2" tabindex="-1"></a>  <span class="at">Actual =</span> test<span class="sc">$</span>salary_in_usd,</span>
+<span id="cb27-3"><a href="#cb27-3" tabindex="-1"></a>  <span class="at">Predicted =</span> <span class="fu">exp</span>(pred_test)</span>
+<span id="cb27-4"><a href="#cb27-4" tabindex="-1"></a>)</span>
+<span id="cb27-5"><a href="#cb27-5" tabindex="-1"></a><span class="fu">ggplot</span>(plot_df, <span class="fu">aes</span>(<span class="at">x =</span> Actual, <span class="at">y =</span> Predicted)) <span class="sc">+</span></span>
+<span id="cb27-6"><a href="#cb27-6" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.6</span>, <span class="at">color =</span> <span class="st">&quot;steelblue&quot;</span>) <span class="sc">+</span></span>
+<span id="cb27-7"><a href="#cb27-7" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">slope =</span> <span class="dv">1</span>, <span class="at">color =</span> <span class="st">&quot;red&quot;</span>, <span class="at">linetype =</span> <span class="st">&quot;dashed&quot;</span>) <span class="sc">+</span></span>
+<span id="cb27-8"><a href="#cb27-8" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">labels =</span> scales<span class="sc">::</span>dollar) <span class="sc">+</span></span>
+<span id="cb27-9"><a href="#cb27-9" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> scales<span class="sc">::</span>dollar) <span class="sc">+</span></span>
+<span id="cb27-10"><a href="#cb27-10" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb27-11"><a href="#cb27-11" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">&quot;Random Forest: Actual vs Predicted Salary (USD)&quot;</span>,</span>
+<span id="cb27-12"><a href="#cb27-12" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">&quot;Actual Salary (USD)&quot;</span>, <span class="at">y =</span> <span class="st">&quot;Predicted Salary (USD)&quot;</span>)</span></code></pre></div>
+<p><img role="img" aria-label src="data:image/png;base64,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" alt width="672" /></p>
+</div>
+<div id="comparison-with-all-continuous-models" class="section level2">
+<h2>8.7 Comparison with all continuous models</h2>
+<div class="sourceCode" id="cb28"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" tabindex="-1"></a>comparison <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;task04_model_comparison.csv&quot;</span>) <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd)</span>
+<span id="cb28-2"><a href="#cb28-2" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(comparison <span class="sc">%&gt;%</span> <span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">c</span>(RMSE_usd, MAE_usd), <span class="sc">~</span> <span class="fu">round</span>(.x, <span class="dv">2</span>))),</span>
+<span id="cb28-3"><a href="#cb28-3" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;All continuous models ranked by out-of-sample USD RMSE&quot;</span>)</span></code></pre></div>
 <table style="width:100%;">
-<caption>Continuous candidates ranked by out-of-sample USD RMSE (Task
-6)</caption>
+<caption>All continuous models ranked by out-of-sample USD
+RMSE</caption>
 <colgroup>
 <col width="39%" />
 <col width="10%" />
@@ -1783,6 +1954,15 @@ below is traceable:</p>
 </thead>
 <tbody>
 <tr class="odd">
+<td align="left">Random Forest regression</td>
+<td align="right">0.4821059</td>
+<td align="right">0.3396814</td>
+<td align="right">0.5600637</td>
+<td align="right">40848.10</td>
+<td align="right">30081.87</td>
+<td align="right">0.5489002</td>
+</tr>
+<tr class="even">
 <td align="left">Ridge regression</td>
 <td align="right">0.5797565</td>
 <td align="right">0.4174088</td>
@@ -1791,7 +1971,7 @@ below is traceable:</p>
 <td align="right">34793.81</td>
 <td align="right">0.5083621</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">Power-transformed OLS (salary^0.26)</td>
 <td align="right">0.5801059</td>
 <td align="right">0.4204853</td>
@@ -1800,7 +1980,7 @@ below is traceable:</p>
 <td align="right">34627.45</td>
 <td align="right">0.5045247</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">Elastic net regression</td>
 <td align="right">0.5833029</td>
 <td align="right">0.4205520</td>
@@ -1809,7 +1989,7 @@ below is traceable:</p>
 <td align="right">35386.72</td>
 <td align="right">0.4911258</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">LASSO regression</td>
 <td align="right">0.5834117</td>
 <td align="right">0.4203073</td>
@@ -1818,7 +1998,7 @@ below is traceable:</p>
 <td align="right">35394.48</td>
 <td align="right">0.4892749</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">Multiple linear regression - stepwise</td>
 <td align="right">0.5879843</td>
 <td align="right">0.4244736</td>
@@ -1827,7 +2007,7 @@ below is traceable:</p>
 <td align="right">36532.46</td>
 <td align="right">0.4409447</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td align="left">Polynomial regression</td>
 <td align="right">0.5883472</td>
 <td align="right">0.4247142</td>
@@ -1836,7 +2016,7 @@ below is traceable:</p>
 <td align="right">36559.49</td>
 <td align="right">0.4403442</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td align="left">Multiple linear regression - full</td>
 <td align="right">0.5883472</td>
 <td align="right">0.4247142</td>
@@ -1847,886 +2027,27 @@ below is traceable:</p>
 </tr>
 </tbody>
 </table>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>logistic_metrics <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">Metric  =</span> <span class="fu">c</span>(<span class="st">&quot;Accuracy&quot;</span>, <span class="st">&quot;Precision&quot;</span>, <span class="st">&quot;Recall (Sensitivity)&quot;</span>, <span class="st">&quot;F1-Score&quot;</span>, <span class="st">&quot;ROC-AUC&quot;</span>),</span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">Value   =</span> <span class="fu">c</span>(<span class="fl">0.761</span>, <span class="fl">0.533</span>, <span class="fl">0.552</span>, <span class="fl">0.542</span>, <span class="fl">0.812</span>)</span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>)</span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(logistic_metrics,</span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Out-of-sample classification metrics of the logistic model (Task 6)&quot;</span>)</span></code></pre></div>
-<table>
-<caption>Out-of-sample classification metrics of the logistic model
-(Task 6)</caption>
-<thead>
-<tr class="header">
-<th align="left">Metric</th>
-<th align="right">Value</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">Accuracy</td>
-<td align="right">0.761</td>
-</tr>
-<tr class="even">
-<td align="left">Precision</td>
-<td align="right">0.533</td>
-</tr>
-<tr class="odd">
-<td align="left">Recall (Sensitivity)</td>
-<td align="right">0.552</td>
-</tr>
-<tr class="even">
-<td align="left">F1-Score</td>
-<td align="right">0.542</td>
-</tr>
-<tr class="odd">
-<td align="left">ROC-AUC</td>
-<td align="right">0.812</td>
-</tr>
-</tbody>
-</table>
+<p>The Random Forest achieves the <strong>lowest out-of-sample
+RMSE</strong> of approximately 40,848 USD and the <strong>highest
+R²</strong> of 0.549, outperforming Ridge regression (42,644 USD RMSE,
+R² = 0.508) by roughly 1,796 USD. The improvement is about 4.2% in RMSE
+— a meaningful gain from adding a non-linear, interaction-aware
+model.</p>
+<p>The Random Forest’s key advantage is its ability to capture
+non-linearities and interactions without explicit specification, which
+Ridge cannot do. However, it does not provide interpretable coefficients
+— the variable importance plot (§8.5) is the substitute for the
+percentage-effect table in the OLS model.</p>
 </div>
-<div id="recovering-the-driver-tables" class="section level3">
-<h3>7.1.2 Recovering the driver tables</h3>
-<p>To interpret the selected models we refit them <em>on the same
-training partition that Tasks 4 and 6 used</em> (452 rows, seed 2026)
-and reconstruct the two tables that the interpretation builds on: the
-percentage effects of the stepwise log-salary model and the odds ratios
-of the logistic model.</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Reproduce the Task 4 factor reference levels</span></span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>train<span class="sc">$</span>experience_level <span class="ot">&lt;-</span> <span class="fu">factor</span>(train<span class="sc">$</span>experience_level, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;EN&quot;</span>, <span class="st">&quot;MI&quot;</span>, <span class="st">&quot;SE&quot;</span>, <span class="st">&quot;EX&quot;</span>))</span>
-<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>train<span class="sc">$</span>company_size     <span class="ot">&lt;-</span> <span class="fu">factor</span>(train<span class="sc">$</span>company_size,     <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;S&quot;</span>, <span class="st">&quot;M&quot;</span>, <span class="st">&quot;L&quot;</span>))</span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>train<span class="sc">$</span>employment_type  <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(train<span class="sc">$</span>employment_type), <span class="at">ref =</span> <span class="st">&quot;FT&quot;</span>)</span>
-<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>train<span class="sc">$</span>job_category     <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(train<span class="sc">$</span>job_category),   <span class="at">ref =</span> <span class="st">&quot;Data_Analyst&quot;</span>)</span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>train<span class="sc">$</span>location_group   <span class="ot">&lt;-</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(train<span class="sc">$</span>location_group), <span class="at">ref =</span> <span class="st">&quot;Other&quot;</span>)</span>
-<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>ols_full <span class="ot">&lt;-</span> <span class="fu">lm</span>(log_salary <span class="sc">~</span> experience_level <span class="sc">+</span> job_category <span class="sc">+</span> employment_type <span class="sc">+</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>                 company_size <span class="sc">+</span> location_group <span class="sc">+</span> remote_ratio <span class="sc">+</span> work_year <span class="sc">+</span> is_local,</span>
-<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>               <span class="at">data =</span> train)</span>
-<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>ols_step <span class="ot">&lt;-</span> <span class="fu">step</span>(ols_full, <span class="at">direction =</span> <span class="st">&quot;both&quot;</span>, <span class="at">trace =</span> <span class="cn">FALSE</span>)   <span class="co"># Task 4&#39;s $4.2 model</span></span>
-<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a></span>
-<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a>pct_effects <span class="ot">&lt;-</span> broom<span class="sc">::</span><span class="fu">tidy</span>(ols_step) <span class="sc">%&gt;%</span></span>
-<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>  <span class="fu">filter</span>(term <span class="sc">!=</span> <span class="st">&quot;(Intercept)&quot;</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">effect_pct =</span> <span class="dv">100</span> <span class="sc">*</span> (<span class="fu">exp</span>(estimate) <span class="sc">-</span> <span class="dv">1</span>),</span>
-<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a>         <span class="at">p_val      =</span> <span class="fu">format.pval</span>(p.value, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">eps =</span> <span class="fl">0.001</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a>  <span class="fu">select</span>(term, estimate, p_val, effect_pct)</span>
-<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(pct_effects <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(<span class="fu">desc</span>(effect_pct)),</span>
-<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a>             <span class="at">digits =</span> <span class="dv">3</span>,</span>
-<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Stepwise log-salary model: coefficients and percentage effects (reference: EN / Data Analyst / FT / Small / Other-location)&quot;</span>)</span></code></pre></div>
-<table>
-<caption>Stepwise log-salary model: coefficients and percentage effects
-(reference: EN / Data Analyst / FT / Small / Other-location)</caption>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="right">estimate</th>
-<th align="left">p_val</th>
-<th align="right">effect_pct</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">experience_levelEX</td>
-<td align="right">0.943</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">156.640</td>
-</tr>
-<tr class="even">
-<td align="left">location_groupUS</td>
-<td align="right">0.935</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">154.607</td>
-</tr>
-<tr class="odd">
-<td align="left">location_groupCA</td>
-<td align="right">0.634</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">88.487</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryResearch</td>
-<td align="right">0.530</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">69.900</td>
-</tr>
-<tr class="odd">
-<td align="left">location_groupGB</td>
-<td align="right">0.526</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">69.262</td>
-</tr>
-<tr class="even">
-<td align="left">location_groupDE</td>
-<td align="right">0.521</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">68.343</td>
-</tr>
-<tr class="odd">
-<td align="left">experience_levelSE</td>
-<td align="right">0.502</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">65.254</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryManagement_Lead</td>
-<td align="right">0.462</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">58.797</td>
-</tr>
-<tr class="odd">
-<td align="left">is_local</td>
-<td align="right">0.413</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">51.079</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryML_AI_Engineer</td>
-<td align="right">0.403</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">49.667</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryData_Scientist</td>
-<td align="right">0.326</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">38.593</td>
-</tr>
-<tr class="even">
-<td align="left">location_groupFR</td>
-<td align="right">0.316</td>
-<td align="left">0.03804</td>
-<td align="right">37.134</td>
-</tr>
-<tr class="odd">
-<td align="left">company_sizeL</td>
-<td align="right">0.300</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">34.968</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryData_Engineer</td>
-<td align="right">0.286</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">33.063</td>
-</tr>
-<tr class="odd">
-<td align="left">employment_typeCT</td>
-<td align="right">0.268</td>
-<td align="left">0.22827</td>
-<td align="right">30.697</td>
-</tr>
-<tr class="even">
-<td align="left">experience_levelMI</td>
-<td align="right">0.218</td>
-<td align="left">0.00315</td>
-<td align="right">24.391</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryOther</td>
-<td align="right">0.187</td>
-<td align="left">0.23173</td>
-<td align="right">20.595</td>
-</tr>
-<tr class="even">
-<td align="left">company_sizeM</td>
-<td align="right">0.159</td>
-<td align="left">0.02993</td>
-<td align="right">17.275</td>
-</tr>
-<tr class="odd">
-<td align="left">location_groupES</td>
-<td align="right">0.033</td>
-<td align="left">0.84456</td>
-<td align="right">3.382</td>
-</tr>
-<tr class="even">
-<td align="left">remote_ratio</td>
-<td align="right">0.001</td>
-<td align="left">0.10153</td>
-<td align="right">0.098</td>
-</tr>
-<tr class="odd">
-<td align="left">location_groupIN</td>
-<td align="right">-0.732</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">-51.927</td>
-</tr>
-<tr class="even">
-<td align="left">employment_typeFL</td>
-<td align="right">-1.066</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">-65.577</td>
-</tr>
-<tr class="odd">
-<td align="left">employment_typePT</td>
-<td align="right">-1.098</td>
-<td align="left">&lt; 0.001</td>
-<td align="right">-66.642</td>
-</tr>
-</tbody>
-</table>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>q3_salary <span class="ot">&lt;-</span> <span class="fu">quantile</span>(data<span class="sc">$</span>salary_in_usd, <span class="at">probs =</span> <span class="fl">0.75</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)   <span class="co"># $150,000</span></span>
-<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>prepare_logit <span class="ot">&lt;-</span> <span class="cf">function</span>(df) {</span>
-<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  df <span class="sc">%&gt;%</span></span>
-<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
-<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>      <span class="at">is_top_tier =</span> <span class="fu">if_else</span>(salary_in_usd <span class="sc">&gt;=</span> q3_salary, <span class="dv">1</span><span class="dt">L</span>, <span class="dv">0</span><span class="dt">L</span>),</span>
-<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>      <span class="at">experience_level =</span> <span class="fu">factor</span>(experience_level, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;EN&quot;</span>, <span class="st">&quot;MI&quot;</span>, <span class="st">&quot;SE&quot;</span>, <span class="st">&quot;EX&quot;</span>)),</span>
-<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>      <span class="at">company_size =</span> <span class="fu">factor</span>(company_size, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;S&quot;</span>, <span class="st">&quot;M&quot;</span>, <span class="st">&quot;L&quot;</span>)),</span>
-<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>      <span class="at">remote_ratio =</span> <span class="fu">factor</span>(remote_ratio, <span class="at">levels =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">50</span>, <span class="dv">100</span>)),</span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>      <span class="at">job_category =</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(job_category), <span class="at">ref =</span> <span class="st">&quot;Data_Analyst&quot;</span>),</span>
-<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>      <span class="at">employment_group =</span> <span class="fu">factor</span>(<span class="fu">if_else</span>(employment_type <span class="sc">==</span> <span class="st">&quot;FT&quot;</span>, <span class="st">&quot;FT&quot;</span>, <span class="st">&quot;Non_FT&quot;</span>),</span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a>                                <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;FT&quot;</span>, <span class="st">&quot;Non_FT&quot;</span>)),</span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>      <span class="at">company_location_group =</span> <span class="fu">factor</span>(<span class="fu">if_else</span>(location_group <span class="sc">==</span> <span class="st">&quot;US&quot;</span>, <span class="st">&quot;US&quot;</span>, <span class="st">&quot;Non_US&quot;</span>),</span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a>                                      <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;Non_US&quot;</span>, <span class="st">&quot;US&quot;</span>))</span>
-<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>    )</span>
-<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>}</span>
-<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>train_li <span class="ot">&lt;-</span> <span class="fu">prepare_logit</span>(train)</span>
-<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a></span>
-<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>logit <span class="ot">&lt;-</span> <span class="fu">glm</span>(is_top_tier <span class="sc">~</span> experience_level <span class="sc">+</span> company_size <span class="sc">+</span> remote_ratio <span class="sc">+</span></span>
-<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a>               job_category <span class="sc">+</span> employment_group <span class="sc">+</span> company_location_group,</span>
-<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a>             <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>), <span class="at">data =</span> train_li)</span>
-<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a></span>
-<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a>or_table <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a>  <span class="at">term      =</span> <span class="fu">rownames</span>(<span class="fu">summary</span>(logit)<span class="sc">$</span>coefficients),</span>
-<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a>  <span class="at">estimate  =</span> <span class="fu">summary</span>(logit)<span class="sc">$</span>coefficients[, <span class="st">&quot;Estimate&quot;</span>],</span>
-<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a>  <span class="at">odds_ratio =</span> <span class="fu">exp</span>(estimate),</span>
-<span id="cb5-27"><a href="#cb5-27" tabindex="-1"></a>  <span class="at">p_val     =</span> <span class="fu">summary</span>(logit)<span class="sc">$</span>coefficients[, <span class="st">&quot;Pr(&gt;|z|)&quot;</span>]</span>
-<span id="cb5-28"><a href="#cb5-28" tabindex="-1"></a>) <span class="sc">%&gt;%</span></span>
-<span id="cb5-29"><a href="#cb5-29" tabindex="-1"></a>  <span class="fu">filter</span>(term <span class="sc">!=</span> <span class="st">&quot;(Intercept)&quot;</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb5-30"><a href="#cb5-30" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">odds_ratio =</span> <span class="fu">round</span>(odds_ratio, <span class="dv">2</span>),</span>
-<span id="cb5-31"><a href="#cb5-31" tabindex="-1"></a>         <span class="at">p_val      =</span> <span class="fu">format.pval</span>(p_val, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">eps =</span> <span class="fl">0.001</span>))</span>
-<span id="cb5-32"><a href="#cb5-32" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(or_table,</span>
-<span id="cb5-33"><a href="#cb5-33" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Logistic model: coefficients and odds ratios for top-25% salary (reference: EN / Data Analyst / FT / Small / non-US)&quot;</span>)</span></code></pre></div>
-<table>
-<caption>Logistic model: coefficients and odds ratios for top-25% salary
-(reference: EN / Data Analyst / FT / Small / non-US)</caption>
-<thead>
-<tr class="header">
-<th align="left">term</th>
-<th align="right">estimate</th>
-<th align="right">odds_ratio</th>
-<th align="left">p_val</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">experience_levelMI</td>
-<td align="right">1.4563223</td>
-<td align="right">4.29</td>
-<td align="left">0.07890</td>
-</tr>
-<tr class="even">
-<td align="left">experience_levelSE</td>
-<td align="right">2.8902468</td>
-<td align="right">18.00</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="odd">
-<td align="left">experience_levelEX</td>
-<td align="right">4.9238975</td>
-<td align="right">137.54</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="even">
-<td align="left">company_sizeM</td>
-<td align="right">1.1865841</td>
-<td align="right">3.28</td>
-<td align="left">0.04828</td>
-</tr>
-<tr class="odd">
-<td align="left">company_sizeL</td>
-<td align="right">1.8951675</td>
-<td align="right">6.65</td>
-<td align="left">0.00175</td>
-</tr>
-<tr class="even">
-<td align="left">remote_ratio50</td>
-<td align="right">-0.5132576</td>
-<td align="right">0.60</td>
-<td align="left">0.41634</td>
-</tr>
-<tr class="odd">
-<td align="left">remote_ratio100</td>
-<td align="right">0.7185788</td>
-<td align="right">2.05</td>
-<td align="left">0.05376</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryData_Engineer</td>
-<td align="right">1.9222193</td>
-<td align="right">6.84</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryData_Scientist</td>
-<td align="right">1.8014630</td>
-<td align="right">6.06</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryManagement_Lead</td>
-<td align="right">2.4005687</td>
-<td align="right">11.03</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryML_AI_Engineer</td>
-<td align="right">3.0035153</td>
-<td align="right">20.16</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-<tr class="even">
-<td align="left">job_categoryOther</td>
-<td align="right">2.4247438</td>
-<td align="right">11.30</td>
-<td align="left">0.02161</td>
-</tr>
-<tr class="odd">
-<td align="left">job_categoryResearch</td>
-<td align="right">2.6119420</td>
-<td align="right">13.63</td>
-<td align="left">0.01374</td>
-</tr>
-<tr class="even">
-<td align="left">employment_groupNon_FT</td>
-<td align="right">-0.9319985</td>
-<td align="right">0.39</td>
-<td align="left">0.33903</td>
-</tr>
-<tr class="odd">
-<td align="left">company_location_groupUS</td>
-<td align="right">2.9505015</td>
-<td align="right">19.12</td>
-<td align="left">&lt; 0.001</td>
-</tr>
-</tbody>
-</table>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Class balance, training:&quot;</span>, <span class="fu">table</span>(train_li<span class="sc">$</span>is_top_tier),</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>    <span class="st">&quot;| McFadden R2:&quot;</span>, <span class="fu">round</span>(<span class="dv">1</span> <span class="sc">-</span> logit<span class="sc">$</span>deviance <span class="sc">/</span> logit<span class="sc">$</span>null.deviance, <span class="dv">3</span>), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div>
-<pre><code>## Class balance, training: 336 116 | McFadden R2: 0.388</code></pre>
-</div>
-<div id="cross-method-agreement-on-the-key-drivers" class="section level3">
-<h3>7.1.3 Cross-method agreement on the key drivers</h3>
-<p>The three independent methods — log-scale percentage effects,
-logistic odds ratios, and the heteroskedasticity-robust ANOVA from Task
-3 — are collected in the table below. Asterisks mark estimates
-significant at the 5% level in their own model.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>agreement <span class="ot">&lt;-</span> <span class="fu">tribble</span>(</span>
-<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="sc">~</span>Driver,                                  <span class="sc">~</span><span class="st">&quot;Regression (% vs ref)&quot;</span>, <span class="sc">~</span><span class="st">`</span><span class="at">Logistic OR</span><span class="st">`</span>,   <span class="sc">~</span><span class="st">`</span><span class="at">Robust ANOVA (Task 3)</span><span class="st">`</span>,</span>
-<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="st">&quot;Experience: Mid (MI)&quot;</span>,                   <span class="st">&quot;+24%*&quot;</span>,                    <span class="st">&quot;n.s.&quot;</span>,          <span class="st">&quot;main effect&quot;</span>,</span>
-<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="st">&quot;Experience: Senior (SE)&quot;</span>,                <span class="st">&quot;+65%*&quot;</span>,                    <span class="st">&quot;18.0*&quot;</span>,         <span class="st">&quot;p &lt; 0.001*&quot;</span>,</span>
-<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="st">&quot;Experience: Executive (EX)&quot;</span>,             <span class="st">&quot;+157%*&quot;</span>,                   <span class="st">&quot;137.5*&quot;</span>,        <span class="st">&quot;(all levels)&quot;</span>,</span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="st">&quot;Company location: US&quot;</span>,                   <span class="st">&quot;+155%*&quot;</span>,                   <span class="st">&quot;19.1*&quot;</span>,         <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>  <span class="st">&quot;Residence match (is_local)&quot;</span>,             <span class="st">&quot;+51%*&quot;</span>,                    <span class="st">&quot;not in model&quot;</span>,  <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>  <span class="st">&quot;Job: Data Engineer&quot;</span>,                     <span class="st">&quot;+33%*&quot;</span>,                    <span class="st">&quot;6.8*&quot;</span>,          <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>  <span class="st">&quot;Job: Data Scientist&quot;</span>,                    <span class="st">&quot;+39%*&quot;</span>,                    <span class="st">&quot;6.1*&quot;</span>,          <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>  <span class="st">&quot;Job: ML / AI Engineer&quot;</span>,                  <span class="st">&quot;+50%*&quot;</span>,                    <span class="st">&quot;20.2*&quot;</span>,         <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>  <span class="st">&quot;Job: Management / Lead&quot;</span>,                 <span class="st">&quot;+59%*&quot;</span>,                    <span class="st">&quot;11.0*&quot;</span>,         <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>  <span class="st">&quot;Job: Research&quot;</span>,                          <span class="st">&quot;+70%*&quot;</span>,                    <span class="st">&quot;13.6*&quot;</span>,         <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>  <span class="st">&quot;Company size: Medium (M)&quot;</span>,               <span class="st">&quot;+17%*&quot;</span>,                    <span class="st">&quot;3.3*&quot;</span>,          <span class="st">&quot;n.s. (robust p = 0.19)&quot;</span>,</span>
-<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a>  <span class="st">&quot;Company size: Large (L)&quot;</span>,                <span class="st">&quot;+35%*&quot;</span>,                    <span class="st">&quot;6.7*&quot;</span>,          <span class="st">&quot;n.s. (robust p = 0.19)&quot;</span>,</span>
-<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a>  <span class="st">&quot;Employment: Part-time&quot;</span>,                  <span class="st">&quot;-67%*&quot;</span>,                    <span class="st">&quot;grouped (n.s.)&quot;</span>,<span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a>  <span class="st">&quot;Employment: Freelance&quot;</span>,                  <span class="st">&quot;-66%*&quot;</span>,                    <span class="st">&quot;grouped (n.s.)&quot;</span>,<span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>  <span class="st">&quot;Remote ratio&quot;</span>,                           <span class="st">&quot;retained (n.s.)&quot;</span>,          <span class="st">&quot;n.s.&quot;</span>,          <span class="st">&quot;not in ANOVA&quot;</span>,</span>
-<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a>  <span class="st">&quot;Work year&quot;</span>,                              <span class="st">&quot;dropped (n.s.)&quot;</span>,           <span class="st">&quot;n.s.&quot;</span>,          <span class="st">&quot;2022 surge* (unadjusted)&quot;</span></span>
-<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>)</span>
-<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(agreement,</span>
-<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Cross-method agreement on salary drivers. * = significant at 5% within that model; n.s. = not significant; grouping of sparse employment categories follows Task 5; is_local (residence matches employer country) is part of the Task 4 regression but not of the logistic or ANOVA designs.&quot;</span>)</span></code></pre></div>
-<table>
-<caption>Cross-method agreement on salary drivers. * = significant at 5%
-within that model; n.s. = not significant; grouping of sparse employment
-categories follows Task 5; is_local (residence matches employer country)
-is part of the Task 4 regression but not of the logistic or ANOVA
-designs.</caption>
-<colgroup>
-<col width="30%" />
-<col width="24%" />
-<col width="16%" />
-<col width="28%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th align="left">Driver</th>
-<th align="left">Regression (% vs ref)</th>
-<th align="left">Logistic OR</th>
-<th align="left">Robust ANOVA (Task 3)</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">Experience: Mid (MI)</td>
-<td align="left">+24%*</td>
-<td align="left">n.s.</td>
-<td align="left">main effect</td>
-</tr>
-<tr class="even">
-<td align="left">Experience: Senior (SE)</td>
-<td align="left">+65%*</td>
-<td align="left">18.0*</td>
-<td align="left">p &lt; 0.001*</td>
-</tr>
-<tr class="odd">
-<td align="left">Experience: Executive (EX)</td>
-<td align="left">+157%*</td>
-<td align="left">137.5*</td>
-<td align="left">(all levels)</td>
-</tr>
-<tr class="even">
-<td align="left">Company location: US</td>
-<td align="left">+155%*</td>
-<td align="left">19.1*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="odd">
-<td align="left">Residence match (is_local)</td>
-<td align="left">+51%*</td>
-<td align="left">not in model</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="even">
-<td align="left">Job: Data Engineer</td>
-<td align="left">+33%*</td>
-<td align="left">6.8*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="odd">
-<td align="left">Job: Data Scientist</td>
-<td align="left">+39%*</td>
-<td align="left">6.1*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="even">
-<td align="left">Job: ML / AI Engineer</td>
-<td align="left">+50%*</td>
-<td align="left">20.2*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="odd">
-<td align="left">Job: Management / Lead</td>
-<td align="left">+59%*</td>
-<td align="left">11.0*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="even">
-<td align="left">Job: Research</td>
-<td align="left">+70%*</td>
-<td align="left">13.6*</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="odd">
-<td align="left">Company size: Medium (M)</td>
-<td align="left">+17%*</td>
-<td align="left">3.3*</td>
-<td align="left">n.s. (robust p = 0.19)</td>
-</tr>
-<tr class="even">
-<td align="left">Company size: Large (L)</td>
-<td align="left">+35%*</td>
-<td align="left">6.7*</td>
-<td align="left">n.s. (robust p = 0.19)</td>
-</tr>
-<tr class="odd">
-<td align="left">Employment: Part-time</td>
-<td align="left">-67%*</td>
-<td align="left">grouped (n.s.)</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="even">
-<td align="left">Employment: Freelance</td>
-<td align="left">-66%*</td>
-<td align="left">grouped (n.s.)</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="odd">
-<td align="left">Remote ratio</td>
-<td align="left">retained (n.s.)</td>
-<td align="left">n.s.</td>
-<td align="left">not in ANOVA</td>
-</tr>
-<tr class="even">
-<td align="left">Work year</td>
-<td align="left">dropped (n.s.)</td>
-<td align="left">n.s.</td>
-<td align="left">2022 surge* (unadjusted)</td>
-</tr>
-</tbody>
-</table>
-<p>Three conclusions stand out from the table.</p>
-<p><strong>Experience level is the dominant driver of pay.</strong> In
-the regression, moving from entry-level to mid pays roughly +24%, to
-senior +65%, and to executive +157% — a steep, monotone gradient. The
-logistic model agrees: senior and executive levels raise the odds of
-top-25% pay by 18- and 137-fold relative to entry level. The robust
-ANOVA agrees as well, confirming experience as the strongest factor
-(<span class="math inline">\(p &lt; 0.001\)</span>) <em>after</em>
-heteroskedasticity is corrected, while every other tested effect weakens
-or disappears. The executive estimates carry very wide confidence
-intervals (the OR of 137.5 has a 95% interval from about 17 to 1,084)
-because few executive observations exist; they are best read as “very
-large” rather than taken literally.</p>
-<p><strong>Geography is the second major driver, and it is
-structural.</strong> A US-based employer is worth roughly +155% in
-salary — the single largest coefficient in the model — with Canada
-(+88%), Germany (+68%), Great Britain (+69%) and France (+37%) forming a
-clear second tier and India about −52% below the rest-of-world baseline.
-The logistic model captures the same fact in coarse form: US location
-multiplies the odds of a top-25% salary by about 19. A related new
-signal emerged once <code>is_local</code> entered the regression: being
-employed where you live is worth roughly <strong>+51%</strong> over an
-otherwise identical posting at an overseas employer — consistent with
-the cross-country gap being structural rather than an artifact of which
-countries happen to appear in the sample. The size of these effects is
-what a country-level dummy can capture; they almost certainly bundle
-together several things (local wage levels, cost of living, tax regimes,
-seniority mixes) that a finer data set could split apart.</p>
-<p><strong>Role family matters, within the field.</strong> Against the
-Data-Analyst baseline, engineering (+33%) and data science (+39%) pay
-moderately more, while machine-learning/AI (+50%), management (+59%) and
-research (+70%) pay substantially more. The logistic odds ratios
-replicate the same ordering (6.1–20.2). The heterogeneous “Other” bucket
-is significant in the logistic model but not in the regression — the two
-methods simply disagree about a catch-all category with no economic
-meaning, which is itself a reason to refine the grouping rather than
-trust either verdict.</p>
-<p><strong>The remaining factors are secondary and the methods diverge
-on company size.</strong> Regression and logistic both find significant,
-positive company-size contrasts (medium +17%, large +35%; OR 3.3 and
-6.7), yet the robust ANOVA finds company size <em>not</em> significant
-once unequal variances are corrected (p = 0.19) and the medium-size
-contrast is only borderline under the regression’s own robust errors (p
-= 0.083). Part-time (−67%) and freelance (−66%) salaries are clearly
-penalized, but these rest on 10 and 4 records respectively, and in the
-logistic model the folded “non-full-time” group is not significant at
-all. Remote work ratio and survey year, significant in isolation (the
-2022 surge from Task 3), carry no stable incremental signal once the
-other factors are held constant — stepwise dropped the survey year
-(keeping <code>remote_ratio</code>, itself insignificant), and LASSO
-shrank the year component to exactly zero.</p>
-</div>
-<div id="where-the-methods-disagree" class="section level3">
-<h3>7.1.4 Where the methods disagree</h3>
-<p>The one genuine disagreement is Company Size, and it is
-<em>structural</em> rather than economic. Task 3 showed that the
-unadjusted two-way ANOVA finds a significant experience-by-size
-interaction (p = 0.008) which evaporates under the
-heteroskedasticity-robust correction (p = 0.13), while the size main
-effect also loses significance (p = 0.19). Yet the regression and
-logistic models, fitted on the same data with robust training of their
-own, still report significant size coefficients. The reason: regression
-and logistic are also affected by the non-constant variance that the
-ANOVA correction removes. The prudent read — and the one we adopt — is
-that experience, geography and role family are <strong>robust</strong>
-drivers, while company size is a <em>suggestive</em> driver whose
-apparent influence partly mirrors the unequal spread of salaries across
-groups. Any claim about company size should therefore be presented as
-conditional, not definitive.</p>
-</div>
-</div>
-<div id="avenues-for-model-improvement" class="section level2">
-<h2>7.2 Avenues for model improvement</h2>
-<div id="why-a-plateau-not-a-failure" class="section level3">
-<h3>7.2.0 Why a plateau, not a failure</h3>
-<p>The results of Task 6 carry an honest limitation: the seven
-continuous candidates sit within about 0.009 log-RMSE of one another
-(0.580–0.588) and within about $2.9k of USD RMSE. In other words,
-<em>switching model families buys almost nothing</em>. Meanwhile,
-out-of-sample <span class="math inline">\(R^2\)</span> on the log scale
-(about 0.34–0.36) trails the in-sample adjusted <span class="math inline">\(R^2\)</span> of the log model (0.64) by a wide
-margin, and residual diagnostics in Task 4 (§4.2) rejected normality on
-every response scale tested — with heteroskedasticity persisting on both
-the log (BP = 54.7, p = 3·10⁻⁴) and power (BP = 42.2, p = 0.012)
-scales.</p>
-<p>Together these three facts say the remaining error is not a property
-of the linear model family but of <strong>how the problem is
-represented</strong>: the data’s granularity, its measurement quality,
-and how we validate on a single 113-row draw. The improvement avenues
-below therefore emphasize better data, better features, and honest
-validation over “a harder model.”</p>
-</div>
-<div id="data-side-improvements" class="section level3">
-<h3>7.2.1 Data-side improvements</h3>
-<table>
-<colgroup>
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th>Ave.</th>
-<th>Avenue</th>
-<th>Evidence hook from our analysis</th>
-<th>Expected benefit</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>a</td>
-<td>Add more years (2023+) and more records</td>
-<td>Only 3 years sampled (n = 565); the 2022 surge in Task 3 (§3.4)
-means the newest year is a single snapshot; our test set is one
-draw</td>
-<td>Captures the post-2022 hiring-boom correction instead of
-extrapolating a single year; shrinks metric uncertainty</td>
-</tr>
-<tr class="even">
-<td>b</td>
-<td>Enrich predictors: education, years of experience, industry,
-employer tier, city-level geography</td>
-<td>US is +155% / OR 19.1 — a country-level coarse average that bundles
-many economic forces</td>
-<td>Splits the single largest coefficient into interpretable pieces</td>
-</tr>
-<tr class="odd">
-<td>c</td>
-<td>Fix sparse groups at the source rather than by grouping</td>
-<td>36 of 53 employer countries have ≤ 3 rows (Task 1); part-time (10),
-contract (5), freelance (4); Task 5 had to fold non-FT together</td>
-<td>Fewer information-destroying groupings; keeps granular levels in the
-model</td>
-</tr>
-<tr class="even">
-<td>d</td>
-<td>Improve target quality</td>
-<td><code>salary</code> is self-reported gross pay; the USD conversion
-uses yearly-mean FX rates (fxdata.foorilla.com); no hours worked, so
-PT/FL understate effort-adjusted pay</td>
-<td>Cleaner coupling of “salary” to what a worker actually earns</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="feature-engineering-improvements" class="section level3">
-<h3>7.2.2 Feature-engineering improvements</h3>
-<table>
-<colgroup>
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th>Ave.</th>
-<th>Avenue</th>
-<th>Evidence hook from our analysis</th>
-<th>Expected benefit</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>e</td>
-<td>Treat <code>remote_ratio</code> as its three categories instead of
-one linear 0–100 slider</td>
-<td>It takes only values {0, 50, 100}; stepwise keeps it as a linear
-term while the quadratic adds nothing (F = 2.48, p = 0.085, Task 4
-§4.3)</td>
-<td>A three-category dummy can still recover a distinct premium at the
-50% hybrid point that a single linear term cannot represent</td>
-</tr>
-<tr class="even">
-<td>f</td>
-<td>Test interaction terms deliberately</td>
-<td>The only ANOVA-tested interaction (Exp × Size) was fragile — p =
-0.008 unadjusted, p = 0.13 robust (Task 3 §3.3); Exp × Role and Year ×
-Experience are untested</td>
-<td>Cannot yet claim “interactions do not matter”; a targeted test would
-settle it</td>
-</tr>
-<tr class="odd">
-<td>g</td>
-<td>Refine <code>is_local</code> into residence-by-remoteness pieces
-(e.g., <code>is_local</code> interacted with
-<code>remote_ratio</code>)</td>
-<td><code>is_local</code> now enters the regression and is worth +51%
-(Task 4 §4.2), but as one blunt 0/1 flag it cannot separate “works
-abroad” from “employer abroad”</td>
-<td>Splits the residence premium into a remote-work component and a
-tax/effort component, replacing one average with two interpretable
-ones</td>
-</tr>
-<tr class="even">
-<td>h</td>
-<td>Revisit the response scale per model — ln for reading, salary^0.26
-for prediction, or a Gamma GLM with log link</td>
-<td>Box–Cox interval [0.22, 0.34] excludes both λ = 1 and λ = 0 (Task 4
-§4.2); heteroskedasticity persists on both the log and the power
-scales</td>
-<td>A principled alternative to “pick a power and hope”; Gamma suits
-multiplicative, positive-skewed pay</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="modeling-and-validation-improvements" class="section level3">
-<h3>7.2.3 Modeling and validation improvements</h3>
-<table>
-<colgroup>
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-<col width="25%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th>Ave.</th>
-<th>Avenue</th>
-<th>Evidence hook from our analysis</th>
-<th>Expected benefit</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>i</td>
-<td>Mixed-effects model with employer country as a random effect</td>
-<td>Task 1 lumped 46 sparse countries into <code>Other</code>; small
-countries plausibly share a latent level</td>
-<td>Borrows strength across countries instead of discarding level
-information</td>
-</tr>
-<tr class="even">
-<td>j</td>
-<td>Quantile regression on log-salary (e.g., 75th percentile)</td>
-<td>The whole classification problem is the top 25%; OLS/ANOVA model
-conditional <em>means</em> and are pulled by heavy tails (Task 3
-§3.3)</td>
-<td>Models exactly the pay range RQs 2 and 3 care about; robust to
-heteroskedastic tails</td>
-</tr>
-<tr class="odd">
-<td>k</td>
-<td>Tree ensembles / gradient boosting with heavy cross-validation</td>
-<td>Residual non-normality persists on every scale (Task 4 §4.2); trees
-capture interactions linear models flatten</td>
-<td>Non-linear capture plus a second source of feature-importance (SHAP)
-to back up §7.1</td>
-</tr>
-<tr class="even">
-<td>l</td>
-<td>Robust estimation, not just robust standard errors (WLS or
-Huber/M-type)</td>
-<td>HC-robust errors fix inference but the coefficients themselves are
-still OLS (Task 4 §4.2)</td>
-<td>Estimates that down-weight the influential, high-variance cells
-ANOVA flagged</td>
-</tr>
-<tr class="odd">
-<td>m</td>
-<td>Ensemble / stack the seven candidates</td>
-<td>All seven sit within ~0.009 log-RMSE — each holds different
-information</td>
-<td>Cheap expected gain by averaging models that agree on the
-plateau</td>
-</tr>
-<tr class="even">
-<td>n</td>
-<td>Uncertainty-aware validation: walk-forward and repeated k-fold,
-bootstrap CIs on metrics</td>
-<td>Our “winner” (Ridge) beats the power transform by ~$0.2k in USD RMSE
-— inseparable from noise on a single 113-row holdout (Task 6 §6.1)</td>
-<td>Replaces point estimates with intervals; tells us which gaps are
-real</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div id="prioritization-and-the-honest-boundary" class="section level3">
-<h3>7.2.4 Prioritization and the honest boundary</h3>
-<p>We rank the fourteen avenues by expected benefit against effort, and
-by which limitation each fixes:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>priorities <span class="ot">&lt;-</span> <span class="fu">tribble</span>(</span>
-<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="sc">~</span>Priority, <span class="sc">~</span>Avenue,                                  <span class="sc">~</span>Fixes,                      <span class="sc">~</span>Effort,</span>
-<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="st">&quot;Highest payoff&quot;</span>,  <span class="st">&quot;Richer predictors (b) + more recent data (a)&quot;</span>, <span class="st">&quot;The dominant US/+155% driver is currently one coarse block; the test set is one year&quot;</span>, <span class="st">&quot;High (data collection)&quot;</span>,</span>
-<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="st">&quot;Highest payoff&quot;</span>,  <span class="st">&quot;Uncertainty-aware validation (n)&quot;</span>,            <span class="st">&quot;Winner-vs-runner-up gaps near $0.2k are noise on one 113-row draw&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
-<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="st">&quot;Cheapest wins&quot;</span>,   <span class="st">&quot;Response-scale work and Gamma GLM (h)&quot;</span>,       <span class="st">&quot;Persistent heteroskedasticity and non-normality on both transformed scales&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
-<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="st">&quot;Cheapest wins&quot;</span>,   <span class="st">&quot;Ensemble of the existing seven (m)&quot;</span>,          <span class="st">&quot;The model plateau: every candidate within 0.009 log-RMSE&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
-<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="st">&quot;Moderate value&quot;</span>,  <span class="st">&quot;Quantile regression (j) / mixed effects (i) / tree ensembles (k)&quot;</span>, <span class="st">&quot;Heavy tails, coarse country grouping, flattened interactions&quot;</span>, <span class="st">&quot;Medium&quot;</span>,</span>
-<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="st">&quot;Only if adopted for Activity 2&quot;</span>, <span class="st">&quot;Feature engineering (e, f, g) and robust estimation (l)&quot;</span>, <span class="st">&quot;Hybrid remote, untested interactions, OLS coefficient estimates&quot;</span>, <span class="st">&quot;Medium-High&quot;</span></span>
-<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>)</span>
-<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(priorities,</span>
-<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Prioritized improvement road-map (a–n refer to the tables above)&quot;</span>)</span></code></pre></div>
-<table>
-<caption>Prioritized improvement road-map (a–n refer to the tables
-above)</caption>
-<colgroup>
-<col width="15%" />
-<col width="31%" />
-<col width="41%" />
-<col width="11%" />
-</colgroup>
-<thead>
-<tr class="header">
-<th align="left">Priority</th>
-<th align="left">Avenue</th>
-<th align="left">Fixes</th>
-<th align="left">Effort</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">Highest payoff</td>
-<td align="left">Richer predictors (b) + more recent data (a)</td>
-<td align="left">The dominant US/+155% driver is currently one coarse
-block; the test set is one year</td>
-<td align="left">High (data collection)</td>
-</tr>
-<tr class="even">
-<td align="left">Highest payoff</td>
-<td align="left">Uncertainty-aware validation (n)</td>
-<td align="left">Winner-vs-runner-up gaps near $0.2k are noise on one
-113-row draw</td>
-<td align="left">Low</td>
-</tr>
-<tr class="odd">
-<td align="left">Cheapest wins</td>
-<td align="left">Response-scale work and Gamma GLM (h)</td>
-<td align="left">Persistent heteroskedasticity and non-normality on both
-transformed scales</td>
-<td align="left">Low</td>
-</tr>
-<tr class="even">
-<td align="left">Cheapest wins</td>
-<td align="left">Ensemble of the existing seven (m)</td>
-<td align="left">The model plateau: every candidate within 0.009
-log-RMSE</td>
-<td align="left">Low</td>
-</tr>
-<tr class="odd">
-<td align="left">Moderate value</td>
-<td align="left">Quantile regression (j) / mixed effects (i) / tree
-ensembles (k)</td>
-<td align="left">Heavy tails, coarse country grouping, flattened
-interactions</td>
-<td align="left">Medium</td>
-</tr>
-<tr class="even">
-<td align="left">Only if adopted for Activity 2</td>
-<td align="left">Feature engineering (e, f, g) and robust estimation
-(l)</td>
-<td align="left">Hybrid remote, untested interactions, OLS coefficient
-estimates</td>
-<td align="left">Medium-High</td>
-</tr>
-</tbody>
-</table>
-<p>We deliberately recommend <em>not</em> rushing to a more exotic model
-family first: the seven existing candidates already disagree by only
-pennies on the dollar, so the next model will inherit the same ceiling.
-The two moves with the largest expected impact are entirely data-side —
-collecting more recent, richer records so the giant country effect can
-be decomposed — and validation-side, so that the tiny gaps we currently
-report as rankings are expressed as the uncertainty intervals they
-actually are.</p>
-<p>Closing honestly: with a self-reported, single-source Kaggle sample
-of 565 rows, we have strong cross-method evidence that <strong>the
-drivers are robust</strong> (experience, geography, role family), but
-the error <em>around</em> those drivers is idiosyncratic — no modeling
-treatment we tried removes it. That asymmetry is exactly what the
-report’s conclusions will carry into Activity 2, where we aim to test
-whether a richer data source lets the same methods do better.</p>
-</div>
+<div id="conclusion" class="section level2">
+<h2>8.8 Conclusion</h2>
+<p>Random Forest regression is the new best continuous model for
+predicting data science salaries on the held-out test set, with an
+out-of-sample RMSE of 40,848 USD (R² = 0.549). The top predictors
+identified by the forest — employer country, experience level, and job
+category — confirm the same structural drivers found by Ridge, ANOVA,
+and logistic regression in Tasks 3–5. For interpretability, the stepwise
+OLS model should be paired with this RF winner, as in Task 6.</p>
 </div>
 </div>
 

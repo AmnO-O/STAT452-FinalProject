@@ -1,8 +1,0 @@
-model,type,cv_rmse_log
-Baseline (stepwise OLS: 5 blocks),OLS,0.5517962008517083
-OLS + exp x location,OLS,0.5690683225842273
-OLS + exp x job category,OLS,0.5581229187110571
-OLS + exp x company size (rerun),OLS,0.5511403020724744
-OLS + exp x location + exp x job category,OLS,0.5768504460836198
-Ridge (same 10 folds),penalized,0.5519302196642119
-Random forest (mtry = 5),tree,0.5440598076605428

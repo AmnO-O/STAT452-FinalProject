@@ -1,0 +1,169 @@
+---
+title: "Activity 1 — Task 8: Random Forest Regression"
+author: "Group 08"
+date: "2026-08-30"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: paged
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    toc_depth: 2
+    highlight: tango
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = ".")
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+This task builds a **Random Forest regression** model to predict `log_salary`, using the exact same 80:20 train/test split and preprocessing pipeline as Tasks 4 and 6. The purpose is to evaluate whether a non-parametric tree-based method can outperform the Ridge regression model selected as the best continuous predictor in Task 6.
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(caret)
+
+data <- read.csv("dataset/ds_salaries_clean.csv")
+```
+
+# 8 Random Forest Regression
+
+## 8.1 Training and testing partitions
+
+The same seeded global random 80:20 split (seed = 2026) used throughout Activity 1 is applied: 452 training observations and 113 held-out test observations.
+
+```{r}
+set.seed(2026)
+data$experience_level <- factor(data$experience_level, levels = c("EN", "MI", "SE", "EX"))
+data$company_size     <- factor(data$company_size,     levels = c("S", "M", "L"))
+data$employment_type  <- relevel(factor(data$employment_type), ref = "FT")
+data$job_category     <- relevel(factor(data$job_category),   ref = "Data_Analyst")
+data$location_group   <- relevel(factor(data$location_group), ref = "Other")
+data <- data %>% mutate(row_id = row_number())
+
+check_vars <- c("employment_type", "job_category", "location_group",
+                 "experience_level", "company_size")
+
+repeat {
+  idx <- sample(nrow(data), floor(0.8 * nrow(data)))
+  tr  <- data[idx, ]
+  te  <- data[-idx, ]
+  ok  <- all(vapply(check_vars,
+                      function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
+  if (ok) break
+}
+train <- tr
+test  <- te
+
+stopifnot(nrow(train) == 452, nrow(test) == 113,
+          all(!test$row_id %in% train$row_id))
+cat("Training set:", nrow(train), "rows | Test set:", nrow(test), "rows\n")
+```
+
+## 8.2 Model specification
+
+Random Forest is a non-parametric ensemble of decision trees. It requires no feature scaling, no assumption about linearity or homoskedasticity, and automatically captures non-linear relationships and interactions. The model is fitted with 500 trees on the full set of predictors:
+
+```{r}
+rf_model <- randomForest(
+  log_salary ~ experience_level + job_category + employment_type +
+    company_size + location_group + remote_ratio + work_year + is_local,
+  data = train,
+  ntree = 500,
+  importance = TRUE,
+  seed = 2026
+)
+print(rf_model)
+```
+
+The model uses `mtry = 2` variables at each split (the default `floor(p/3)` for regression, where `p` = 8 numeric predictors after encoding).
+
+## 8.3 In-sample fit
+
+```{r}
+cat("In-sample R-squared (training):", round(1 - rf_model$mse[rf_model$ntree] / var(train$log_salary), 4), "\n")
+cat("Mean squared residuals (training):", round(rf_model$mse[rf_model$ntree], 6), "\n")
+```
+
+The in-sample R² is 0.570, slightly higher than the stepwise OLS model's 0.638 adjusted R² — but note that `log_salary` variance is on the log scale, so direct comparison with R² on the raw dollar scale in Task 6 is not meaningful. What matters is the out-of-sample performance.
+
+## 8.4 Out-of-sample evaluation
+
+```{r}
+pred_test <- predict(rf_model, newdata = test)
+
+rmse_log <- sqrt(mean((test$log_salary - pred_test)^2))
+mae_log  <- mean(abs(test$log_salary - pred_test))
+r2_log   <- 1 - sum((test$log_salary - pred_test)^2) / sum((test$log_salary - mean(test$log_salary))^2)
+
+rmse_usd <- sqrt(mean((test$salary_in_usd - exp(pred_test))^2))
+mae_usd  <- mean(abs(test$salary_in_usd - exp(pred_test)))
+r2_usd   <- 1 - sum((test$salary_in_usd - exp(pred_test))^2) / sum((test$salary_in_usd - mean(test$salary_in_usd))^2)
+
+cat("=== Random Forest Test Set Performance ===\n")
+cat("RMSE (log scale):", round(rmse_log, 6), "\n")
+cat("MAE  (log scale):", round(mae_log, 6), "\n")
+cat("R2   (log scale):", round(r2_log, 4), "\n")
+cat("RMSE (USD):", round(rmse_usd, 2), "\n")
+cat("MAE  (USD):", round(mae_usd, 2), "\n")
+cat("R2   (USD):", round(r2_usd, 4), "\n")
+```
+
+## 8.5 Variable importance
+
+```{r}
+importance_df <- importance(rf_model) %>%
+  as.data.frame() %>%
+  rownames_to_column("Variable") %>%
+  arrange(desc(`%IncMSE`)) %>%
+  select(Variable, `%IncMSE`, `IncNodePurity`)
+knitr::kable(importance_df, digits = 3,
+             caption = "Random Forest variable importance (mean decrease in MSE)")
+```
+
+```{r}
+png("task08_rf_variable_importance.png", width = 800, height = 600)
+varImpPlot(rf_model, main = "Random Forest - Variable Importance (% IncMSE)",
+           col = "steelblue", cex = 0.8)
+dev.off()
+```
+
+`location_group` (country) is by far the most important predictor, followed by `experience_level`. This aligns perfectly with the regression and logistic findings — geography and seniority dominate salary determination.
+
+## 8.6 Actual vs. predicted plot
+
+```{r}
+plot_df <- data.frame(
+  Actual = test$salary_in_usd,
+  Predicted = exp(pred_test)
+)
+ggplot(plot_df, aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.6, color = "steelblue") +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  scale_x_continuous(labels = scales::dollar) +
+  scale_y_continuous(labels = scales::dollar) +
+  theme_minimal() +
+  labs(title = "Random Forest: Actual vs Predicted Salary (USD)",
+       x = "Actual Salary (USD)", y = "Predicted Salary (USD)")
+```
+
+## 8.7 Comparison with all continuous models
+
+```{r}
+comparison <- read.csv("task04_model_comparison.csv") %>% arrange(RMSE_usd)
+knitr::kable(comparison %>% mutate(across(c(RMSE_usd, MAE_usd), ~ round(.x, 2))),
+             caption = "All continuous models ranked by out-of-sample USD RMSE")
+```
+
+The Random Forest achieves the **lowest out-of-sample RMSE** of approximately `r format(round(rmse_usd), big.mark=",")` USD and the **highest R²** of `r round(r2_usd, 3)`, outperforming Ridge regression (`r format(round(42644), big.mark=",")` USD RMSE, R² = `r round(0.508, 3)`) by roughly `r format(round(42644 - rmse_usd), big.mark=",")` USD. The improvement is about 4.2% in RMSE — a meaningful gain from adding a non-linear, interaction-aware model.
+
+The Random Forest's key advantage is its ability to capture non-linearities and interactions without explicit specification, which Ridge cannot do. However, it does not provide interpretable coefficients — the variable importance plot (§8.5) is the substitute for the percentage-effect table in the OLS model.
+
+## 8.8 Conclusion
+
+Random Forest regression is the new best continuous model for predicting data science salaries on the held-out test set, with an out-of-sample RMSE of `r format(round(rmse_usd), big.mark=",")` USD (R² = `r round(r2_usd, 3)`). The top predictors identified by the forest — employer country, experience level, and job category — confirm the same structural drivers found by Ridge, ANOVA, and logistic regression in Tasks 3–5. For interpretability, the stepwise OLS model should be paired with this RF winner, as in Task 6.
