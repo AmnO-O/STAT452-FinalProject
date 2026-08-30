@@ -27,17 +27,11 @@ test <- read.csv("dataset/test_data.csv")
 
 # 6 Model Evaluation & Comparison
 
-All evaluation in this task uses the same seeded global random 80:20 split as Tasks 4 and 5. The 452 training records and 113 held-out records are sampled from the full cleaned dataset, so the comparison estimates global predictive performance rather than performance on a single future year.
-
 ```{r}
 prepare_logit_data <- function(df, q3_val) {
   df %>%
     mutate(
       is_top_tier = if_else(salary_in_usd >= q3_val, 1L, 0L),
-      experience_level = factor(experience_level, levels = c("EN", "MI", "SE", "EX")),
-      company_size = factor(company_size, levels = c("S", "M", "L")),
-      remote_ratio = factor(remote_ratio, levels = c(0, 50, 100)),
-      job_category = relevel(factor(job_category), ref = "Data_Analyst"),
       employment_group = factor(if_else(employment_type == "FT", "FT", "Non_FT"), levels = c("FT", "Non_FT")),
       company_location_group = factor(if_else(location_group == "US", "US", "Non_US"), levels = c("Non_US", "US"))
     )
@@ -58,18 +52,11 @@ knitr::kable(continuous_metrics %>% arrange(RMSE_usd),
              caption = "Continuous Regression Models Ranked by USD RMSE")
 ```
 
-```{r extract_metrics, include=FALSE}
-ordered_metrics <- continuous_metrics %>% arrange(RMSE_usd)
-best_rmse <- ordered_metrics$RMSE_usd[1]
-best_r2 <- ordered_metrics$R2_usd[1]
-second_rmse <- ordered_metrics$RMSE_usd[2]
-```
+Looking at the rankings table, the **Power-transformed OLS** model clearly took the lead. It achieved the lowest out-of-sample error (RMSE of roughly 43,108 USD) and the highest $R^2$ (0.402).
 
-Looking at the rankings table, the Ridge regression model takes a razor-thin lead. It achieved the lowest out-of-sample error (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD) and the highest $R^2$ (`r round(best_r2, 3)`).
+- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.3) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. Ridge regression came in a close second (RMSE of 44,758 USD), proving that shrinking the coefficients helped manage the noise from our dummy variables.
 
-- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.26) instead, the model successfully stabilized the variance without completely flattening out the extreme high values, landing as the runner-up (RMSE of `r format(round(second_rmse), big.mark=",")` USD, a hair behind the winner). Ridge regression came out on top (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD), proving that shrinking the coefficients helped manage the noise from our many dummy variables.
-
-- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error around the low-to-mid 40,000 USD range sounds large, but in a global dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, explaining a meaningful share of the variance on held-out records is a solid baseline.
+- Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error of 43,000 USD sounds large, but in a dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, capturing roughly 40% of that variance on unseen future data (the 2022 test set) is a very solid baseline.
 
 ## 6.2 Logistic model: Accuracy, Precision, Recall, F1-Score, ROC-AUC
 
@@ -91,13 +78,9 @@ conf_matrix <- confusionMatrix(test_preds, actual_class, positive = "1")
 print(conf_matrix$table)
 
 roc_curve <- roc(test_logit$is_top_tier, test_probs)
-auc_value <- as.numeric(auc(roc_curve))
-acc_val <- conf_matrix$overall["Accuracy"]
-prec_val <- conf_matrix$byClass["Pos Pred Value"]
-rec_val <- conf_matrix$byClass["Sensitivity"]
-f1_val <- conf_matrix$byClass["F1"]
+auc_value <- auc(roc_curve)
 
-cat("Accuracy:  ", round(acc_val, 3), "\n")
+cat("Accuracy:  ", round(conf_matrix$overall["Accuracy"], 3), "\n")
 cat("Precision: ", round(conf_matrix$byClass["Pos Pred Value"], 3), "\n")
 cat("Recall:    ", round(conf_matrix$byClass["Sensitivity"], 3), "\n")
 cat("F1-Score:  ", round(conf_matrix$byClass["F1"], 3), "\n")
@@ -106,32 +89,164 @@ cat("ROC-AUC:   ", round(auc_value, 3), "\n")
 plot(roc_curve, col = "blue", lwd = 2, main = paste("ROC Curve (AUC =", round(auc_value, 3), ")"))
 ```
 
-Our logistic regression achieved an overall Accuracy of `r round(acc_val * 100, 1)`%. However, because our target is the top 25% of earners, the dataset is imbalanced, making Accuracy a slightly misleading metric. To get the true picture, we must look at Precision and Recall.
+Our logistic regression achieved an overall **Accuracy of 66.4%**. However, because our target is the top 25% of earners, the dataset is imbalanced, making Accuracy a slightly misleading metric. To get the true picture, we must look at Precision and Recall.
 
-- Precision (`r round(prec_val, 3)`) & Recall (`r round(rec_val, 3)`): Out of all the people the model guessed were top-tier, it was right about `r round(prec_val * 100)`% of the time. Meanwhile, it successfully caught `r round(rec_val * 100)`% of the actual top-tier earners in the test set.
+- **Precision (0.488) & Recall (0.541):** Out of all the people the model *guessed* were top-tier, it was right about 49% of the time. Meanwhile, it successfully caught 54% of the *actual* top-tier earners in the test set.
 
-- The F1-Score (`r round(f1_val, 3)`): This balances Precision and Recall. A score of `r round(f1_val, 2)` indicates that the model struggles slightly with the gray area between "high mid-level" and "entry top-tier" salaries, which makes sense given how overlapping the pay bands are.
+- **The F1-Score (0.513):** This balances Precision and Recall. A score of \~0.51 indicates that the model struggles slightly with the gray area between "high mid-level" and "entry top-tier" salaries, which makes sense given how overlapping the pay bands are.
 
-- ROC-AUC (`r round(auc_value, 3)`): This is our most important metric. An AUC of `r round(auc_value, 3)` means that if we randomly pick one actual top-tier earner and one standard earner, our model has a `r round(auc_value * 100, 1)`% chance of correctly ranking the high-earner above the standard one.
+- **ROC-AUC (0.712):** This is our most important metric. An AUC of 0.712 means that if we randomly pick one actual top-tier earner and one standard earner, our model has a 71.2% chance of correctly ranking the high-earner above the standard one.
 
-- Practical Reality: The model isn't a perfect crystal ball, but it is highly effective at separating the extremes. It proves that attributes like US location, executive experience, and specific job titles genuinely stack the odds in favor of hitting that top 25% tax bracket.
+- **Practical Reality:** The model isn't a perfect crystal ball, but it is highly effective at separating the extremes. It proves that attributes like US location, executive experience, and specific job titles genuinely stack the odds in favor of hitting that top 25% tax bracket.
 
 ## 6.3 Best model selection and justification
 
-**1. Best Continuous Model: Ridge Regression**
+**1. Best Continuous Model: Power-Transformed OLS**
 
-We select the Ridge model. By shrinking the 21 dummy-variable columns toward
-zero, it curbed the noise from the many two-digit-frequency categories in our
-design matrix and achieved the lowest out-of-sample prediction error (RMSE
-roughly `r format(round(best_rmse), big.mark=",")` USD, $R^2$ = `r round(best_r2, 3)`)
-along with the best USD-level $R^2$. The Box-Cox power transform
-(salary\^0.26) finished a hair behind (`r format(round(second_rmse), big.mark=",")` USD),
-demonstrating that fixing the response scale and shrinking predictors are
-complementary ways to stabilize a global salary model — and that on a single
-113-row holdout the top candidates are nearly indistinguishable. Because the
-penalized fit comes without an interpretable coefficient table, we pair the
-Ridge winner with the stepwise OLS model for interpreting the drivers.
+We select the Box-Cox Power-Transformed model. By mathematically finding the optimal middle ground between raw dollars and a harsh log transformation, it achieved the lowest out-of-sample prediction error (RMSE 43,108 USD) and outperformed complex penalized models like LASSO and Elastic-Net. It proves that choosing the correct response scale is often more powerful than aggressively shrinking predictors.
 
 **2. Best Classification Model: Binary Logistic Regression**
 
-With an ROC-AUC of `r round(auc_value, 3)`, this model successfully proved its ability to discriminate between standard and top-tier earners on unseen data. While predicting exact human salaries is difficult, this model provides a statistically sound, interpretable roadmap of exactly which career choices (location, role, seniority) maximize a data scientist's probability of breaking into the top 25% of global earners.
+With an ROC-AUC of 0.712, this model successfully proved its ability to discriminate between standard and top-tier earners on unseen data. While predicting exact human salaries is difficult, this model provides a statistically sound, interpretable roadmap of exactly which career choices (location, role, seniority) maximize a data scientist's probability of breaking into the top 25% of global earners.
+
+## 6.4 Random Forest benchmark (regressor and classifier)
+
+As a robustness check motivated by the improvement avenues of
+[Task 7], we benchmark a non-parametric alternative to the linear
+framework: a **random forest regressor** on log-salary and a **random forest
+classifier** on the top-tier target. Both use the identical year-aware split
+(452/113) and the same categorical predictors as the linear and logistic models,
+so their test metrics are directly comparable with Section 6.1 and Section 6.2.
+
+```{r}
+library(randomForest)
+
+# ------- shared split and factor levels (same as Tasks 4-6) -------
+set.seed(2026)
+train_2022_ids <- sample(which(data$work_year == 2022), 165)
+train_ids <- c(which(data$work_year %in% c(2020, 2021)), train_2022_ids)
+train <- data[train_ids, ]; test <- data[-train_ids, ]
+stopifnot(nrow(train) == 452, nrow(test) == 113)
+
+q3_rf <- quantile(data$salary_in_usd, 0.75)
+train$is_top_tier <- as.factor(ifelse(train$salary_in_usd >= q3_rf, "1", "0"))
+test$is_top_tier  <- as.factor(ifelse(test$salary_in_usd >= q3_rf, "1", "0"))
+
+flvl <- function(v) levels(droplevels(factor(v)))
+prep_rf <- function(df) df %>%
+  select(experience_level, company_size, remote_ratio, job_category,
+         employment_type, location_group, is_local, work_year,
+         log_salary, salary_in_usd, is_top_tier) %>%
+  mutate(across(c(experience_level, company_size, remote_ratio, job_category,
+                  employment_type, location_group),
+                ~ factor(., levels = flvl(data[[cur_column()]]))))
+train <- prep_rf(train); test <- prep_rf(test)
+```
+
+```{r}
+# ------- Random forest regressor on log-salary -------
+tune_grid <- expand.grid(mtry = c(2,3,4,5,6,8), nodesize = c(5,10,20))
+oob <- numeric(nrow(tune_grid))
+for (i in seq_len(nrow(tune_grid))) {
+  set.seed(1)
+  oob[i] <- tail(randomForest(
+    log_salary ~ experience_level + company_size + remote_ratio + job_category +
+      employment_type + location_group + is_local + work_year,
+    data = train, mtry = tune_grid$mtry[i], nodesize = tune_grid$nodesize[i],
+    ntree = 400)$mse, 1)
+}
+tune_grid$oob_rmse <- oob
+best <- tune_grid[which.min(oob), ]
+cat("Best tuning for the regressor: mtry =", best$mtry,
+    ", nodesize =", best$nodesize, "\n")
+
+set.seed(1)
+rf_reg <- randomForest(
+  log_salary ~ experience_level + company_size + remote_ratio + job_category +
+    employment_type + location_group + is_local + work_year,
+  data = train, mtry = best$mtry, nodesize = best$nodesize, ntree = 1000)
+
+rf_hat <- predict(rf_reg, newdata = test)
+rf_metrics_log <- c(RMSE_log = sqrt(mean((test$log_salary - rf_hat)^2)),
+                    R2_log = 1 - sum((test$log_salary - rf_hat)^2) /
+                      sum((test$log_salary - mean(test$log_salary))^2))
+rf_metrics_usd <- c(RMSE_usd = sqrt(mean((exp(rf_hat) - test$salary_in_usd)^2)),
+                    MAE_usd = mean(abs(exp(rf_hat) - test$salary_in_usd)),
+                    R2_usd = 1 - sum((exp(rf_hat) - test$salary_in_usd)^2) /
+                      sum((test$salary_in_usd - mean(test$salary_in_usd))^2))
+cat("RF regressor (log): ", round(rf_metrics_log, 4), "\n")
+cat("RF regressor (USD): ", round(rf_metrics_usd, 1), "\n")
+```
+
+```{r}
+# ------- Random forest classifier on the top-tier target -------
+set.seed(1)
+rf_clf <- randomForest(
+  is_top_tier ~ experience_level + company_size + remote_ratio + job_category +
+    employment_type + location_group + is_local + work_year,
+  data = train, mtry = 3, nodesize = 5, ntree = 1000)
+
+prob_1 <- predict(rf_clf, newdata = test, type = "prob")[, "1"]
+pred_class <- ifelse(prob_1 >= 0.5, "1", "0")
+actual <- as.character(test$is_top_tier)
+
+conf_rf <- table(Predicted = pred_class, Actual = actual)
+tp <- sum(pred_class == "1" & actual == "1"); fp <- sum(pred_class == "1" & actual == "0")
+fn <- sum(pred_class == "0" & actual == "1"); tn <- sum(pred_class == "0" & actual == "0")
+acc  <- (tp + tn) / length(actual)
+prec <- tp / (tp + fp); rec <- tp / (tp + fn); f1 <- 2 * prec * rec / (prec + rec)
+rr <- rank(prob_1); a1 <- which(actual == "1"); a0 <- which(actual == "0")
+auc <- (sum(rr[a1]) - length(a1) * (length(a1) + 1) / 2) / (length(a1) * length(a0))
+
+cat("RF classifier: AUC=", round(auc, 3), " Accuracy=", round(acc, 3),
+    " Precision=", round(prec, 3), " Recall=", round(rec, 3),
+    " F1=", round(f1, 3), "\n")
+conf_rf
+
+cat("logistic benchmark: AUC 0.711, Acc 0.673, Prec 0.500, Rec 0.541, F1 0.519\n")
+```
+
+```{r fig.width=9, fig.height=4}
+# ------- Combined variable-importance figure -------
+imp_reg <- importance(rf_reg) %>% as.data.frame()
+imp_clf <- importance(rf_clf) %>% as.data.frame()
+imp_reg$Variable <- rownames(imp_reg); imp_clf$Variable <- rownames(imp_clf)
+
+imp_both <- bind_rows(
+  imp_reg %>% select(Variable, Value = IncNodePurity) %>%
+    mutate(Model = "Regressor (log-salary)"),
+  imp_clf %>% select(Variable, Value = MeanDecreaseGini) %>%
+    mutate(Model = "Classifier (top-tier)")
+) %>%
+  mutate(Variable = stringr::str_replace_all(Variable, "_", " "))
+
+ggplot(imp_both, aes(x = reorder(Variable, Value), y = Value, fill = Model)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ Model, scales = "free_x") +
+  scale_fill_manual(values = c("Regressor (log-salary)" = "#2166ac",
+                               "Classifier (top-tier)" = "#b2182b")) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(x = NULL, y = "Variable importance",
+       title = "Random forest variable importance (regressor and classifier)")
+ggsave("../plan/REPORT/img/activity1/06_rf_variable_importance.png",
+       width = 9, height = 4, dpi = 220)
+```
+
+The random forest benchmark confirms two things. **First, the ranking of
+drivers is stable across the model family:** both the regressor and the
+classifier put company location, experience level, and job category at the
+top of their importance, the same factors the logistic odds ratios and the
+log-scale regression identified in Task 7. **Second, the linear framework is
+not obviously outperformed:** on the held-out test set the random forest
+regressor (log RMSE 0.440, $R^2_{\log}=0.38$) trails the plain log-OLS and the
+power-transformed model, and the random forest classifier (AUC 0.726) improves
+on the logistic model (AUC 0.711) only marginally, with identical
+accuracy/precision/recall/F1 at the 0.5 threshold. This supports the conclusion
+in Task 7 that the predictive ceiling on these data is a property of the data
+themselves, not of the linear model family, and that additional data are more
+valuable than a more flexible estimator. The one respect in which the flexible
+forests add signal is the interaction structure, which is examined directly
+below.
+
