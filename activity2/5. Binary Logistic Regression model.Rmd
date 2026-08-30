@@ -139,3 +139,247 @@ More importantly, the **ROC-AUC score is `r round(auc_value, 3)`**. This means t
 The precision (`r round(prec_val, 3)`) and recall (`r round(rec_val, 3)`) demonstrate a well-balanced classifier that doesn't just guess "Yes" for everyone.
 
 **Final Answer:** We can classify treatment-seekers with high accuracy ($\approx$ `r round(acc_val * 100, 1)`%). The analysis proves that the decision to seek treatment is profoundly driven by **personal biology and age** (specifically family history and age), while corporate environmental factors (like supportive coworkers or HR policies) and gender fail to statistically alter an employee's underlying probability of seeking professional medical care.
+
+## 5.4 Random Forest Benchmark
+
+The logistic model is linear and assumes log-odds are a linear function of the predictors. To check whether a *nonlinear* tree ensemble can capture additional structure---interactions between predictors or curvilinear effects---we fit a **Random Forest** classifier on the exact same binary target (`Treatment_Cat`) and the same training/test partition (seed 2026, 844/211). Random Forest aggregates many decision trees, each trained on a bootstrap sample with a random subset of predictors, which lets it model nonlinearity and interactions without parametric assumptions.
+
+```{r}
+# Random Forest needs its own package
+library(randomForest)
+
+# Numeric design matrix (same predictors as the logistic model) for x/y interface
+rf_X <- model.matrix(
+  ~ Age + Gender_Category + Family_History + Employer_Mental_Importance +
+    Employer_Phys_Importance + Coworker_Reaction_Score + Tech_Company_Cat,
+  data = train
+)[, -1]
+rf_y <- train$Treatment_Cat
+
+# ---- 5-fold stratified cross-validation to tune the random forest ----
+set.seed(2026)
+folds <- createFolds(rf_y, k = 5, list = TRUE, returnTrain = TRUE)
+
+grid <- expand.grid(
+  mtry     = c(2, 3, 5),
+  maxnodes = c(8, 16, 32),
+  ntree    = c(100, 300)
+)
+
+cv_results <- data.frame()
+for (g in seq_len(nrow(grid))) {
+  aucs <- numeric(5)
+  for (f in seq_along(folds)) {
+    tr_idx <- folds[[f]]
+    set.seed(123)
+    rf_f <- randomForest(
+      x = rf_X[tr_idx, , drop = FALSE], y = rf_y[tr_idx],
+      mtry = grid$mtry[g], maxnodes = grid$maxnodes[g], ntree = grid$ntree[g]
+    )
+    p_f <- predict(rf_f, rf_X[-tr_idx, , drop = FALSE], type = "prob")[, "Yes"]
+    aucs[f] <- as.numeric(auc(roc(rf_y[-tr_idx], p_f)))
+  }
+  cv_results <- rbind(cv_results, data.frame(
+    mtry = grid$mtry[g], maxnodes = grid$maxnodes[g],
+    ntree = grid$ntree[g], CV_AUC = round(mean(aucs), 4)
+  ))
+}
+best_cfg <- cv_results[which.max(cv_results$CV_AUC), ]
+knitr::kable(cv_results[order(-cv_results$CV_AUC), ],
+             caption = "5-fold CV tuning of the random forest (mean validation AUC)")
+
+# ---- Retrain best config on the full training set and score the test set ----
+set.seed(123)
+rf_model <- randomForest(
+  x = rf_X, y = rf_y,
+  mtry = best_cfg$mtry, maxnodes = best_cfg$maxnodes,
+  ntree = best_cfg$ntree, importance = TRUE
+)
+
+# Out-of-bag error rate
+oob_err <- mean(rf_model$err.rate[, 1])
+
+# Predict on the held-out test set (use the same model.matrix structure)
+rf_X_test <- model.matrix(
+  ~ Age + Gender_Category + Family_History + Employer_Mental_Importance +
+    Employer_Phys_Importance + Coworker_Reaction_Score + Tech_Company_Cat,
+  data = test
+)[, -1]
+rf_probs <- predict(rf_model, rf_X_test, type = "prob")[, "Yes"]
+rf_preds <- factor(ifelse(rf_probs >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+
+rf_cm <- confusionMatrix(rf_preds, test$Treatment_Cat, positive = "Yes")
+print(rf_cm$table)
+
+# Metrics
+rf_acc  <- rf_cm$overall["Accuracy"]
+rf_prec <- rf_cm$byClass["Precision"]
+rf_rec  <- rf_cm$byClass["Sensitivity"]
+rf_f1   <- rf_cm$byClass["F1"]
+rf_auc  <- as.numeric(auc(roc(test$Treatment_Cat, rf_probs)))
+
+cat("\nBest config (5-fold CV): mtry =", best_cfg$mtry,
+    ", maxnodes =", best_cfg$maxnodes, ", ntree =", best_cfg$ntree)
+cat("\nRandom Forest OOB error: ", round(oob_err, 3))
+cat("\nAccuracy: ", round(rf_acc, 3))
+cat("\nPrecision:", round(rf_prec, 3))
+cat("\nRecall:   ", round(rf_rec, 3))
+cat("\nF1-Score: ", round(rf_f1, 3))
+cat("\nROC-AUC:  ", round(rf_auc, 3), "\n")
+```
+
+```{r}
+# Variable importance: how much each predictor reduces classification accuracy.
+# Aggregate dummy-level rows back to their original predictors.
+raw_imp <- importance(rf_model)[, "MeanDecreaseAccuracy", drop = FALSE]
+base_names <- sub('(Gender_Category|Family_History|Tech_Company_Cat).*', '\\1',
+                  rownames(raw_imp))
+imp_by_predictor <- rowsum(raw_imp[, 1], base_names, reorder = FALSE)
+rf_imp <- imp_by_predictor[, 1]
+names(rf_imp) <- rownames(imp_by_predictor)
+
+rf_imp_df <- data.frame(
+  Predictor = names(rf_imp),
+  MeanDecreaseAccuracy = round(rf_imp, 2)
+) %>%
+  arrange(desc(MeanDecreaseAccuracy))
+knitr::kable(rf_imp_df, caption = "Random Forest Variable Importance (Mean Decrease in Accuracy)")
+```
+
+```{r}
+# Comparison of the two classifiers on the held-out test set
+logit_f1 <- 2 * prec_val * rec_val / (prec_val + rec_val)
+comparison_rf <- tibble(
+  Model = c("Binary Logistic Regression", "Random Forest"),
+  Accuracy  = c(round(acc_val, 3), round(rf_acc, 3)),
+  Precision = c(round(prec_val, 3), round(rf_prec, 3)),
+  Recall    = c(round(rec_val, 3), round(rf_rec, 3)),
+  `F1-Score` = c(round(logit_f1, 3), round(rf_f1, 3)),
+  `ROC-AUC` = c(round(auc_value, 3), round(rf_auc, 3))
+)
+knitr::kable(comparison_rf, caption = "Test-Set Comparison: Logistic vs. Random Forest")
+```
+
+### Random Forest Benchmark Results
+
+The Random Forest (hyperparameters chosen by 5-fold cross-validation: `mtry = `r best_cfg$mtry`, `maxnodes = `r best_cfg$maxnodes`, `ntree = `r best_cfg$ntree`) achieves an out-of-sample **accuracy of `r round(rf_acc * 100, 1)`% with a ROC-AUC of `r round(rf_auc, 3)`** (`r round(rf_f1, 3)` F1), compared with the logistic model's accuracy of `r round(acc_val * 100, 1)`% and AUC of `r round(auc_value, 3)`. The two classifiers perform very similarly, with the linear logistic model holding a slight edge on this small tabular sample---consistent with the expectation that a flexible tree ensemble has little extra signal to extract from only 844 training rows.
+
+Critically, the Random Forest's variable-importance ranking **corroborates the logistic finding**:            `Family_History` is far and away the most influential predictor (mean decrease in accuracy $\approx$ `r round(rf_imp["Family_History"], 0)`), while the workplace measures, gender, and tech-company status contribute only marginal splits. Whether modeled linearly or nonlinearly, the same substantive conclusion emerges: the decision to seek treatment is governed by personal biology (family history, and to a lesser degree age), not by the corporate environment or gender.
+
+## 5.5 Principal Component Analysis (PCA) with Random Forest
+
+The predictors include several correlated workplace ratings and demographic measures spanning different scales (Age 19--65, ratings 0--10, binary indicators). **Principal Component Analysis (PCA)** decorrelates these features and compresses them into a smaller set of orthogonal components ordered by the variance they explain. This is a common preprocessing step for reducing multicollinearity and dimensionality. For a Random Forest, we test empirically whether feeding the model PCA components---rather than the original correlated features---changes predictive performance.
+
+The transformation is fitted **only on the training set** (standardizing each feature and extracting the principal-component loadings) and then applied to the test set, avoiding data leakage.
+
+```{r}
+# Build the numeric design matrix (same predictors as the logistic model);
+# one-hot encode the categorical predictors, dropping base levels as in model.matrix
+X_all <- model.matrix(
+  ~ Age + Gender_Category + Family_History + Employer_Mental_Importance +
+    Employer_Phys_Importance + Coworker_Reaction_Score + Tech_Company_Cat,
+  data = rbind(train, test)
+)[, -1]
+
+n_train <- nrow(train)
+X_train_mat <- X_all[1:n_train, ]
+X_test_mat  <- X_all[(n_train + 1):nrow(X_all), ]
+
+# PCA on the TRAINING set only (center + scale), then transform test
+pca_fit <- prcomp(X_train_mat, center = TRUE, scale. = TRUE)
+
+# Proportion of variance explained by the first k components
+cum_var <- cumsum(pca_fit$sdev^2 / sum(pca_fit$sdev^2))
+
+# Transform both sets using the training PCA loadings
+Z_train <- predict(pca_fit, newdata = X_train_mat)
+Z_test  <- predict(pca_fit, newdata = X_test_mat)
+
+# Variance explained
+pca_summary <- tibble(
+  Component = 1:length(cum_var),
+  `Prop. Variance` = round(pca_fit$sdev^2 / sum(pca_fit$sdev^2), 3),
+  `Cumulative`      = round(cum_var, 3)
+)
+knitr::kable(pca_summary, caption = "Variance explained by PCA components")
+```
+
+```{r}
+# ---- 5-fold stratified CV to tune the PCA random forest (k = 8 components) ----
+k_pca <- 8   # drop the lowest-variance component from the 9-feature design matrix
+
+set.seed(2026)
+pca_folds <- createFolds(train$Treatment_Cat, k = 5, list = TRUE, returnTrain = TRUE)
+
+pca_grid <- expand.grid(
+  mtry     = c(1, 2, 3),
+  maxnodes = c(8, 16, 32),
+  ntree    = c(100, 300)
+)
+
+pca_cv_results <- data.frame()
+for (g in seq_len(nrow(pca_grid))) {
+  aucs <- numeric(5)
+  for (f in seq_along(pca_folds)) {
+    tr_idx <- pca_folds[[f]]
+    set.seed(123)
+    rf_pca_f <- randomForest(
+      x = Z_train[tr_idx, 1:k_pca, drop = FALSE], y = train$Treatment_Cat[tr_idx],
+      mtry = pca_grid$mtry[g], maxnodes = pca_grid$maxnodes[g],
+      ntree = pca_grid$ntree[g]
+    )
+    p_f <- predict(rf_pca_f, Z_train[-tr_idx, 1:k_pca, drop = FALSE], type = "prob")[, "Yes"]
+    aucs[f] <- as.numeric(auc(roc(train$Treatment_Cat[-tr_idx], p_f)))
+  }
+  pca_cv_results <- rbind(pca_cv_results, data.frame(
+    mtry = pca_grid$mtry[g], maxnodes = pca_grid$maxnodes[g],
+    ntree = pca_grid$ntree[g], CV_AUC = round(mean(aucs), 4)
+  ))
+}
+pca_best_cfg <- pca_cv_results[which.max(pca_cv_results$CV_AUC), ]
+knitr::kable(pca_cv_results[order(-pca_cv_results$CV_AUC), ],
+             caption = "5-fold CV tuning of the PCA random forest (k = 8 components, mean validation AUC)")
+
+# ---- Retrain best PCA config on the full training set, score the test set ----
+set.seed(123)
+rf_pca <- randomForest(
+  x = Z_train[, 1:k_pca, drop = FALSE], y = train$Treatment_Cat,
+  mtry = pca_best_cfg$mtry, maxnodes = pca_best_cfg$maxnodes,
+  ntree = pca_best_cfg$ntree
+)
+
+p_pca_rf <- predict(rf_pca, Z_test[, 1:k_pca, drop = FALSE], type = "prob")[, "Yes"]
+cl_pca_rf <- factor(ifelse(p_pca_rf >= 0.5, "Yes", "No"), levels = c("No", "Yes"))
+cm_pca_rf <- confusionMatrix(cl_pca_rf, test$Treatment_Cat, positive = "Yes")
+
+pca_rf_auc  <- as.numeric(auc(roc(test$Treatment_Cat, p_pca_rf)))
+pca_rf_acc  <- cm_pca_rf$overall["Accuracy"]
+pca_rf_prec <- cm_pca_rf$byClass["Precision"]
+pca_rf_rec  <- cm_pca_rf$byClass["Sensitivity"]
+pca_rf_f1   <- cm_pca_rf$byClass["F1"]
+
+cat("\nBest PCA config (5-fold CV): mtry =", pca_best_cfg$mtry,
+    ", maxnodes =", pca_best_cfg$maxnodes, ", ntree =", pca_best_cfg$ntree)
+cat("\nPCA-RF (k=8) Accuracy:", round(pca_rf_acc, 3),
+    " Precision:", round(pca_rf_prec, 3),
+    " Recall:", round(pca_rf_rec, 3),
+    " F1:", round(pca_rf_f1, 3),
+    " ROC-AUC:", round(pca_rf_auc, 3), "\n")
+```
+
+```{r}
+# 3-way comparison: logistic, raw random forest, and PCA random forest
+comparison_pca <- tibble(
+  Model = c("Binary Logistic", "Random Forest (raw)", "Random Forest (PCA k=8)"),
+  Accuracy  = c(round(acc_val, 3), round(rf_acc, 3), round(pca_rf_acc, 3)),
+  Precision = c(round(prec_val, 3), round(rf_prec, 3), round(pca_rf_prec, 3)),
+  Recall    = c(round(rec_val, 3), round(rf_rec, 3), round(pca_rf_rec, 3)),
+  `F1-Score` = c(round(logit_f1, 3), round(rf_f1, 3), round(pca_rf_f1, 3)),
+  `ROC-AUC` = c(round(auc_value, 3), round(rf_auc, 3), round(pca_rf_auc, 3))
+)
+knitr::kable(comparison_pca, caption = "Test-Set Comparison: Logistic vs. Random Forest (raw and PCA)")
+```
+
+### PCA-RF Benchmark Results
+
+With $k=8$ PCA components (which, from the nine-predictor design matrix, retain $\approx$ `r round(cum_var[8] * 100, 1)`% of the variance by dropping the single lowest-variance component) and the same 5-fold cross-validation used for the raw forest---here selecting `mtry = `r pca_best_cfg$mtry`, `maxnodes = `r pca_best_cfg$maxnodes`, `ntree = `r pca_best_cfg$ntree`---the PCA-transformed Random Forest attains a **ROC-AUC of `r round(pca_rf_auc, 3)` and accuracy of `r round(pca_rf_acc * 100, 1)`%** on the held-out test set. On ROC-AUC it edges out both the raw-feature Random Forest and the linear logistic model (`r round(auc_value, 3)`); on accuracy it lands just below the logistic baseline. The modest gain and near-matching accuracy reflect the fact that the treatment decision is driven by one dominant binary predictor (family history) that a linear model already captures, so even a tuned nonlinear ensemble and a mild dimensionality reduction add little beyond ranking better on borderline cases. The practical takeaway is unchanged: no PCA preprocessing alters the substantive conclusion that treatment-seeking is governed by personal biology rather than the corporate environment or gender.
