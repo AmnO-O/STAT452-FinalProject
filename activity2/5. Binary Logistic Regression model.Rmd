@@ -92,11 +92,11 @@ knitr::kable(odds_ratios, caption = "Adjusted Odds Ratios for Seeking Treatment"
 
 By examining the **Odds Ratios (OR)**, where $OR > 1$ indicates increased probability and $OR < 1$ indicates decreased probability, we uncover a fascinating divide between personal and environmental factors:
 
-- **Personal Family History Dominates:** The strongest predictor by a massive margin is personal biology. Employees with a known family history of mental illness have incredibly high odds of seeking treatment compared to those without. Age also shows a slight, statistically significant positive correlation ($OR = 1.024$, $p = 0.013$). However, unlike our initial hypothesis, **Gender does not play a significant role** ($p > 0.05$ for all gender contrasts).
+- **Personal Family History Dominates:** The strongest predictor by a massive margin is personal biology. Employees with a known family history of mental illness have incredibly high odds of seeking treatment compared to those without. Age also shows a slight, statistically significant positive correlation ($OR = 1.024$, $p = 0.013$). Gender shows a smaller but still significant association: Female employees have higher odds of seeking treatment than Male employees ($OR = 1.644$, $p = 0.008$), while the Other category does not differ from Male.
 
 - **Environmental Factors are Weak:** Surprisingly, workplace variables have almost zero impact on the individual's decision to seek clinical help. The importance the employer places on mental/physical health, the tech-company status, and even the coworker reaction score all yielded non-significant p-values.
 
-In short: **The decision to seek professional treatment is driven primarily by family history and age, not by corporate policy or gender.**
+In short: **The decision to seek professional treatment is driven primarily by family history, with smaller contributions from age and female gender, and essentially none from corporate policy.**
 
 ## 5.3 Out-of-Sample Classification Performance
 
@@ -138,7 +138,7 @@ More importantly, the **ROC-AUC score is `r round(auc_value, 3)`**. This means t
 
 The precision (`r round(prec_val, 3)`) and recall (`r round(rec_val, 3)`) demonstrate a well-balanced classifier that doesn't just guess "Yes" for everyone.
 
-**Final Answer:** We can classify treatment-seekers with high accuracy ($\approx$ `r round(acc_val * 100, 1)`%). The analysis proves that the decision to seek treatment is profoundly driven by **personal biology and age** (specifically family history and age), while corporate environmental factors (like supportive coworkers or HR policies) and gender fail to statistically alter an employee's underlying probability of seeking professional medical care.
+**Final Answer:** We can classify treatment-seekers with high accuracy ($\approx$ `r round(acc_val * 100, 1)`%). The analysis proves that the decision to seek treatment is profoundly driven by **personal biology** (specifically family history), with smaller positive associations for **age and female gender**, while corporate environmental factors (like supportive coworkers or HR policies) fail to statistically alter an employee's underlying probability of seeking professional medical care.
 
 ## 5.4 Random Forest Benchmark
 
@@ -264,7 +264,7 @@ knitr::kable(comparison_rf, caption = "Test-Set Comparison: Logistic vs. Random 
 
 The Random Forest (hyperparameters chosen by 5-fold cross-validation: `mtry = `r best_cfg$mtry`, `maxnodes = `r best_cfg$maxnodes`, `ntree = `r best_cfg$ntree`) achieves an out-of-sample **accuracy of `r round(rf_acc * 100, 1)`% with a ROC-AUC of `r round(rf_auc, 3)`** (`r round(rf_f1, 3)` F1), compared with the logistic model's accuracy of `r round(acc_val * 100, 1)`% and AUC of `r round(auc_value, 3)`. The two classifiers perform very similarly, with the linear logistic model holding a slight edge on this small tabular sample---consistent with the expectation that a flexible tree ensemble has little extra signal to extract from only 844 training rows.
 
-Critically, the Random Forest's variable-importance ranking **corroborates the logistic finding**:            `Family_History` is far and away the most influential predictor (mean decrease in accuracy $\approx$ `r round(rf_imp["Family_History"], 0)`), while the workplace measures, gender, and tech-company status contribute only marginal splits. Whether modeled linearly or nonlinearly, the same substantive conclusion emerges: the decision to seek treatment is governed by personal biology (family history, and to a lesser degree age), not by the corporate environment or gender.
+Critically, the Random Forest's variable-importance ranking **corroborates the logistic finding**:            `Family_History` is far and away the most influential predictor (mean decrease in accuracy $\approx$ `r round(rf_imp["Family_History"], 0)`), while the workplace measures, tech-company status, and gender contribute only marginal splits. Whether modeled linearly or nonlinearly, family history dominates the decision to seek treatment. The one nuance is that the linear logistic model detects a modest female-versus-male odds advantage ($OR=1.644$) that the partitions of this small tree ensemble do not exploit.
 
 ## 5.5 Principal Component Analysis (PCA) with Random Forest
 
