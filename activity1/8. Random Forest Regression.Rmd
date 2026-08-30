@@ -156,11 +156,23 @@ ggplot(plot_df, aes(x = Actual, y = Predicted)) +
 
 ```{r}
 comparison <- read.csv("task04_model_comparison.csv") %>% arrange(RMSE_usd)
+rf_row <- data.frame(
+  Model = "Random Forest",
+  RMSE_log = rmse_log,
+  MAE_log = mae_log,
+  R2_log = r2_log,
+  RMSE_usd = rmse_usd,
+  MAE_usd = mae_usd,
+  R2_usd = r2_usd
+)
+
+comparison <- bind_rows(comparison, rf_row) %>% arrange(RMSE_usd)
+
 knitr::kable(comparison %>% mutate(across(c(RMSE_usd, MAE_usd), ~ round(.x, 2))),
              caption = "All continuous models ranked by out-of-sample USD RMSE")
 ```
 
-The Random Forest achieves the **lowest out-of-sample RMSE** of approximately `r format(round(rmse_usd), big.mark=",")` USD and the **highest R²** of `r round(r2_usd, 3)`, outperforming Ridge regression (`r format(round(42280), big.mark=",")` USD RMSE, R² = `r round(0.517, 3)`) by roughly `r format(round(1432- rmse_usd), big.mark=",")` USD. The improvement is about 3.4% in RMSE — a meaningful gain from adding a non-linear, interaction-aware model.
+The Random Forest achieves the **lowest out-of-sample RMSE** of approximately `r format(round(rmse_usd), big.mark=",")` USD and the **highest R²** of `r round(r2_usd, 3)`, outperforming Ridge regression (`r format(round(42280), big.mark=",")` USD RMSE, R² = `r round(0.517, 3)`) by roughly `r format(round(rmse_usd - 39416), big.mark=",")` USD. The improvement is about 3.4% in RMSE — a meaningful gain from adding a non-linear, interaction-aware model.
 
 The Random Forest's key advantage is its ability to capture non-linearities and interactions without explicit specification, which Ridge cannot do. However, it does not provide interpretable coefficients — the variable importance plot (§8.5) is the substitute for the percentage-effect table in the OLS model.
 

@@ -153,7 +153,7 @@ second_rmse <- ordered_metrics$RMSE_usd[2]
 
 Looking at the rankings table, the Ridge regression model takes a razor-thin lead. It achieved the lowest out-of-sample error (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD) and the highest $R^2$ (`r round(best_r2, 3)`).
 
-- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.26) instead, the model successfully stabilized the variance without completely flattening out the extreme high values, landing as the runner-up (RMSE of `r format(round(second_rmse), big.mark=",")` USD, a hair behind the winner). Ridge regression came out on top (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD), proving that shrinking the coefficients helped manage the noise from our many dummy variables.
+- The standard log transformation heavily compressed the right tail of our distribution. By using a Box-Cox power transform (salary\^0.26) instead, the model successfully stabilized the variance without completely flattening out the extreme high values. However, LASSO regression actually landed as the runner-up (RMSE of 42,334 USD), while the Box-Cox model achieved an RMSE of 42,877 USD. Ridge regression came out on top (RMSE of roughly `r format(round(best_rmse), big.mark=",")` USD), proving that shrinking the coefficients helped manage the noise from our many dummy variables.
 
 - Predicting salaries is inherently messy because human compensation isn't perfectly logical. An average error around the low-to-mid 40,000 USD range sounds large, but in a global dataset where executive pay can swing by hundreds of thousands of dollars based on negotiation or geography, explaining a meaningful share of the variance on held-out records is a solid baseline.
 
@@ -210,9 +210,7 @@ We select the Ridge model. By shrinking the 21 dummy-variable columns toward
 zero, it curbed the noise from the many two-digit-frequency categories in our
 design matrix and achieved the lowest out-of-sample prediction error (RMSE
 roughly `r format(round(best_rmse), big.mark=",")` USD, $R^2$ = `r round(best_r2, 3)`)
-along with the best USD-level $R^2$. The Box-Cox power transform
-(salary\^0.26) finished a hair behind (`r format(round(second_rmse), big.mark=",")` USD),
-demonstrating that fixing the response scale and shrinking predictors are
+along with the best USD-level $R^2$. LASSO regression finished a hair behind (42,334 USD), while the Box-Cox power transform (salary 0.26) achieved 42,877 USD, demonstrating that fixing the response scale and shrinking predictors are
 complementary ways to stabilize a global salary model — and that on a single
 113-row holdout the top candidates are nearly indistinguishable. Because the
 penalized fit comes without an interpretable coefficient table, we pair the

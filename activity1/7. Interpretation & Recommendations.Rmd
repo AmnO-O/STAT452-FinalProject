@@ -330,7 +330,7 @@ features, and honest validation over "a harder model."
 | k | Tree ensembles / gradient boosting with heavy cross-validation | Residual non-normality persists on every scale (Task 4 §4.2); trees capture interactions linear models flatten | Non-linear capture plus a second source of feature-importance (SHAP) to back up §7.1 |
 | l | Robust estimation, not just robust standard errors (WLS or Huber/M-type) | HC-robust errors fix inference but the coefficients themselves are still OLS (Task 4 §4.2) | Estimates that down-weight the influential, high-variance cells ANOVA flagged |
 | m | Ensemble / stack the seven candidates | All seven sit within ~0.009 log-RMSE — each holds different information | Cheap expected gain by averaging models that agree on the plateau |
-| n | Uncertainty-aware validation: walk-forward and repeated k-fold, bootstrap CIs on metrics | Our "winner" (Ridge) beats the power transform by ~$0.2k in USD RMSE — inseparable from noise on a single 113-row holdout (Task 6 §6.1) | Replaces point estimates with intervals; tells us which gaps are real |
+| n | Uncertainty-aware validation: walk-forward and repeated k-fold, bootstrap CIs on metrics | Our "winner" (Ridge) beats the power transform by ~$0.6k in USD RMSE — inseparable from noise on a single 113-row holdout (Task 6 §6.1) | Replaces point estimates with intervals; tells us which gaps are real |
 
 ### 7.2.4 Prioritization and the honest boundary
 
@@ -341,7 +341,7 @@ limitation each fixes:
 priorities <- tribble(
   ~Priority, ~Avenue,                                  ~Fixes,                      ~Effort,
   "Highest payoff",  "Richer predictors (b) + more recent data (a)", "The dominant US/+155% driver is currently one coarse block; the test set is one year", "High (data collection)",
-  "Highest payoff",  "Uncertainty-aware validation (n)",            "Winner-vs-runner-up gaps near $0.2k are noise on one 113-row draw", "Low",
+  "Highest payoff",  "Uncertainty-aware validation (n)",            "Winner-vs-runner-up gaps near $0.05k are noise on one 113-row draw", "Low",
   "Cheapest wins",   "Response-scale work and Gamma GLM (h)",       "Persistent heteroskedasticity and non-normality on both transformed scales", "Low",
   "Cheapest wins",   "Ensemble of the existing seven (m)",          "The model plateau: every candidate within 0.009 log-RMSE", "Low",
   "Moderate value",  "Quantile regression (j) / mixed effects (i) / tree ensembles (k)", "Heavy tails, coarse country grouping, flattened interactions", "Medium",
