@@ -1825,8 +1825,11 @@ groups are sparse. In particular, some categories have no top-tier
 observations, which can cause complete separation and unstable logistic
 coefficients. To retain their information without that problem,
 employment is grouped as full-time versus non-full-time and company
-location as US versus non-US. The job-category grouping and all other
-factor definitions come directly from the Task 1 cleaned data.</p>
+location as US versus non-US. Similarly, the <code>is_local</code>
+indicator was excluded to prevent data sparsity and quasi-complete
+separation caused by its extreme class imbalance. The job-category
+grouping and all other factor definitions come directly from the Task 1
+cleaned data.</p>
 <pre class="r"><code>job_category_levels &lt;- levels(
   relevel(factor(data$job_category), ref = &quot;Data_Analyst&quot;)
 )
