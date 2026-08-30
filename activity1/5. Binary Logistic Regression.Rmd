@@ -1,7 +1,7 @@
 ---
 title: 'Activity 1 — Task 5: Binary Logistic Regression Modeling'
 author: "Group 08"
-date: "2026-08-21"
+date: "2026-08-30"
 output:
   html_document:
     toc: true
@@ -51,7 +51,7 @@ classified as top-tier when their salary is at least this cut-off. The use of
 the cut-off are all retained in the top-tier class.
 
 ```{r}
-q3_salary <- quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE)
+q3_salary <- as.numeric(quantile(data$salary_in_usd, probs = 0.75, na.rm = TRUE))
 
 data <- data %>%
   mutate(
@@ -65,7 +65,7 @@ target_summary <- data %>%
     tier = if_else(is_top_tier == 1L, "Top tier (1)", "Below top tier (0)"),
     proportion = n / sum(n)
   ) %>%
-  select(tier, n, proportion)
+  dplyr::select(tier, n, proportion)
 
 cat("75th-percentile salary cut-off (Q3): $", format(q3_salary, big.mark = ","), "\n", sep = "")
 knitr::kable(target_summary, digits = 3,
@@ -78,19 +78,49 @@ not a data-cleaning error.
 
 ## 5.2 Training and testing partitions
 
-Task 4 uses a seeded global random 80:20 split, so this task applies the same
-logic. Each cleaned observation has a chance to enter either partition, which
-matches the research question's goal of predicting salaries for Data Science
-professionals globally rather than forecasting one specific year.
+Model quality is judged on observations not seen during fitting, so the 565
+cleaned records are split into training (80%) and test (20%) sets with a
+seeded global random draw (`set.seed(2026)`). This is the same partition used
+by Tasks 4 and 6, so every evaluation in the report compares the exact same
+held-out records.
 
 ```{r split-5-2}
 set.seed(2026)
-train_ids <- sample(nrow(data), floor(0.8 * nrow(data)))
-train <- data[train_ids, ]
-test <- data[-train_ids, ]
+used_cols <- c("salary_in_usd", "experience_level", "employment_type",
+               "company_size", "job_category", "location_group", "remote_ratio",
+               "work_year", "is_top_tier")
+stopifnot(nrow(data) == 565,
+          sum(is.na(data[, intersect(used_cols, names(data))])) == 0)
+
+check_vars <- c("employment_type", "job_category", "location_group",
+                "experience_level", "company_size")
+
+repeat {
+  idx <- sample(nrow(data), floor(0.8 * nrow(data)))
+  tr  <- data[idx, ]
+  te  <- data[-idx, ]
+  ok  <- all(vapply(check_vars,
+                    function(v) all(unique(te[[v]]) %in% unique(tr[[v]])), logical(1)))
+  if (ok) break
+}
+
+train <- tr
+test <- te
 
 stopifnot(nrow(train) == 452, nrow(test) == 113,
           all(!test$row_id %in% train$row_id))
+```
+
+The draw is checked so that rare categories (contract and freelance employment
+have 5 and 4 records dataset-wide) stay represented in training. The fixed
+seed makes the split fully reproducible and prevents prediction failures from
+unseen factor levels.
+
+```{r split-5-2-composition}
+table(train$work_year);        table(test$work_year)
+table(train$experience_level); table(test$experience_level)
+table(train$job_category);     table(test$job_category)
+table(train$employment_type);  table(test$employment_type)
 ```
 
 ## 5.3 Predictor preparation and model fitting
@@ -362,11 +392,6 @@ These are adjusted associations observed in the training data, not causal salary
 
 ### 5.7.2 Train-Test Evaluation Framework
 
-The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the 452 training
-observations. To assess whether the model's learned associations generalize
-within the global salary population, the fitted model is applied to the held-out
-test set of 113 randomly selected records. The seeded random split protects
-against over-optimistic performance claims while keeping the evaluation aligned
-with the global prediction research question.
+The AIC and McFadden pseudo-$R^2$ summarize in-sample fit on the 452 training observations. To assess whether the model's learned associations generalize, the fitted model is applied to the held-out test set (113 records). The training-test split strategy (global random split) helps protect against over-optimistic performance claims and evaluates the model's ability to predict top-tier status for unobserved records across the entire dataset.
 
 The test-set predictions and their corresponding classification metrics are computed in the section above. These out-of-sample evaluations, including accuracy, sensitivity, specificity, ROC-AUC, and other performance measures, will be calculated and compared to in-sample training performance in Task 6 to determine whether the model generalizes or exhibits overfitting.

@@ -1707,8 +1707,8 @@ Recommendations</a>
 <ul>
 <li><a href="#feature-importance-interpretation" id="toc-feature-importance-interpretation">7.1 Feature importance
 interpretation</a></li>
-<li><a href="#recommendations-for-model-improvement" id="toc-recommendations-for-model-improvement">7.2 Recommendations for
-model improvement</a></li>
+<li><a href="#avenues-for-model-improvement" id="toc-avenues-for-model-improvement">7.2 Avenues for model
+improvement</a></li>
 </ul></li>
 </ul>
 </div>
@@ -1719,7 +1719,7 @@ things the requirement asks for. First, we interpret which features
 actually drive Data Science pay (§7.1) and check whether the three
 independent methods used — continuous regression, binary logistic
 regression, and factorial ANOVA — agree on the same drivers. Second, we
-propose four directions for improving predictive performance (§7.2),
+propose concrete avenues for improving predictive performance (§7.2),
 each grounded in a limitation that our own model outputs exposed rather
 than in generic machine-learning advice.</p>
 <p>We deliberately reuse the exact partitions, encodings, and results of
@@ -1729,11 +1729,12 @@ the numbers that our own fitted models produced.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(tidyverse)</span>
 <span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(broom)</span>
 <span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(knitr)</span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a></span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>data  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/ds_salaries_clean.csv&quot;</span>)</span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>train <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/train_data.csv&quot;</span>)</span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>test  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/test_data.csv&quot;</span>)</span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>cmp   <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;task04_model_comparison.csv&quot;</span>)</span></code></pre></div>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">library</span>(pROC)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>data  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/ds_salaries_clean.csv&quot;</span>)</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>train <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/train_data.csv&quot;</span>)</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>test  <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;dataset/test_data.csv&quot;</span>)</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>cmp   <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(<span class="st">&quot;task04_model_comparison.csv&quot;</span>)</span></code></pre></div>
 <div id="interpretation-and-recommendations" class="section level1">
 <h1>7 Interpretation and Recommendations</h1>
 <div id="feature-importance-interpretation" class="section level2">
@@ -1756,8 +1757,50 @@ same training records, so reading the stepwise table for substance does
 not change the story.</p>
 <p>The context table from Task 6 is repeated here so every number cited
 below is traceable:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(cmp <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd),</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Continuous candidates ranked by out-of-sample USD RMSE (Task 6)&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># Recompute the Task 6 out-of-sample metrics on the same partition so this</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="co"># recap cannot drift from Task 6&#39;s own printed output.</span></span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>q3_salary <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">quantile</span>(data<span class="sc">$</span>salary_in_usd, <span class="at">probs =</span> <span class="fl">0.75</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>prepare_metrics_data <span class="ot">&lt;-</span> <span class="cf">function</span>(df) {</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>  df <span class="sc">%&gt;%</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>      <span class="at">is_top_tier =</span> <span class="fu">if_else</span>(salary_in_usd <span class="sc">&gt;=</span> q3_salary, <span class="dv">1</span><span class="dt">L</span>, <span class="dv">0</span><span class="dt">L</span>),</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>      <span class="at">experience_level =</span> <span class="fu">factor</span>(experience_level, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;EN&quot;</span>, <span class="st">&quot;MI&quot;</span>, <span class="st">&quot;SE&quot;</span>, <span class="st">&quot;EX&quot;</span>)),</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>      <span class="at">company_size =</span> <span class="fu">factor</span>(company_size, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;S&quot;</span>, <span class="st">&quot;M&quot;</span>, <span class="st">&quot;L&quot;</span>)),</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>      <span class="at">remote_ratio =</span> <span class="fu">factor</span>(remote_ratio, <span class="at">levels =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">50</span>, <span class="dv">100</span>)),</span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>      <span class="at">job_category =</span> <span class="fu">relevel</span>(<span class="fu">factor</span>(job_category), <span class="at">ref =</span> <span class="st">&quot;Data_Analyst&quot;</span>),</span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>      <span class="at">employment_group =</span> <span class="fu">factor</span>(<span class="fu">if_else</span>(employment_type <span class="sc">==</span> <span class="st">&quot;FT&quot;</span>, <span class="st">&quot;FT&quot;</span>, <span class="st">&quot;Non_FT&quot;</span>),</span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>                                <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;FT&quot;</span>, <span class="st">&quot;Non_FT&quot;</span>)),</span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a>      <span class="at">company_location_group =</span> <span class="fu">factor</span>(<span class="fu">if_else</span>(location_group <span class="sc">==</span> <span class="st">&quot;US&quot;</span>, <span class="st">&quot;US&quot;</span>, <span class="st">&quot;Non_US&quot;</span>),</span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a>                                      <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">&quot;Non_US&quot;</span>, <span class="st">&quot;US&quot;</span>))</span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a>    )</span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a>}</span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a>train_for_metrics <span class="ot">&lt;-</span> <span class="fu">prepare_metrics_data</span>(train)</span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a>test_for_metrics  <span class="ot">&lt;-</span> <span class="fu">prepare_metrics_data</span>(test)</span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a>logit_metrics <span class="ot">&lt;-</span> <span class="fu">glm</span>(is_top_tier <span class="sc">~</span> experience_level <span class="sc">+</span> company_size <span class="sc">+</span> remote_ratio <span class="sc">+</span></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a>                       job_category <span class="sc">+</span> employment_group <span class="sc">+</span> company_location_group,</span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a>                     <span class="at">family =</span> <span class="fu">binomial</span>(<span class="at">link =</span> <span class="st">&quot;logit&quot;</span>), <span class="at">data =</span> train_for_metrics)</span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a>test_probs <span class="ot">&lt;-</span> <span class="fu">predict</span>(logit_metrics, <span class="at">newdata =</span> test_for_metrics, <span class="at">type =</span> <span class="st">&quot;response&quot;</span>)</span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a>test_preds <span class="ot">&lt;-</span> <span class="fu">if_else</span>(test_probs <span class="sc">&gt;=</span> <span class="fl">0.5</span>, <span class="dv">1</span><span class="dt">L</span>, <span class="dv">0</span><span class="dt">L</span>)</span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a>actual     <span class="ot">&lt;-</span> test_for_metrics<span class="sc">$</span>is_top_tier</span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a></span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a>tn_m <span class="ot">&lt;-</span> <span class="fu">sum</span>(test_preds <span class="sc">==</span> <span class="dv">0</span><span class="dt">L</span> <span class="sc">&amp;</span> actual <span class="sc">==</span> <span class="dv">0</span><span class="dt">L</span>); fp_m <span class="ot">&lt;-</span> <span class="fu">sum</span>(test_preds <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span> <span class="sc">&amp;</span> actual <span class="sc">==</span> <span class="dv">0</span><span class="dt">L</span>)</span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a>fn_m <span class="ot">&lt;-</span> <span class="fu">sum</span>(test_preds <span class="sc">==</span> <span class="dv">0</span><span class="dt">L</span> <span class="sc">&amp;</span> actual <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span>); tp_m <span class="ot">&lt;-</span> <span class="fu">sum</span>(test_preds <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span> <span class="sc">&amp;</span> actual <span class="sc">==</span> <span class="dv">1</span><span class="dt">L</span>)</span>
+<span id="cb2-32"><a href="#cb2-32" tabindex="-1"></a>acc_m <span class="ot">&lt;-</span> (tp_m <span class="sc">+</span> tn_m) <span class="sc">/</span> <span class="fu">length</span>(actual)</span>
+<span id="cb2-33"><a href="#cb2-33" tabindex="-1"></a>prec_m <span class="ot">&lt;-</span> tp_m <span class="sc">/</span> (tp_m <span class="sc">+</span> fp_m)</span>
+<span id="cb2-34"><a href="#cb2-34" tabindex="-1"></a>rec_m  <span class="ot">&lt;-</span> tp_m <span class="sc">/</span> (tp_m <span class="sc">+</span> fn_m)</span>
+<span id="cb2-35"><a href="#cb2-35" tabindex="-1"></a>f1_m   <span class="ot">&lt;-</span> <span class="dv">2</span> <span class="sc">*</span> prec_m <span class="sc">*</span> rec_m <span class="sc">/</span> (prec_m <span class="sc">+</span> rec_m)</span>
+<span id="cb2-36"><a href="#cb2-36" tabindex="-1"></a>auc_m  <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(<span class="fu">auc</span>(<span class="fu">roc</span>(actual, test_probs, <span class="at">quiet =</span> <span class="cn">TRUE</span>)))</span>
+<span id="cb2-37"><a href="#cb2-37" tabindex="-1"></a></span>
+<span id="cb2-38"><a href="#cb2-38" tabindex="-1"></a>logistic_metrics <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
+<span id="cb2-39"><a href="#cb2-39" tabindex="-1"></a>  <span class="at">Metric =</span> <span class="fu">c</span>(<span class="st">&quot;Accuracy&quot;</span>, <span class="st">&quot;Precision&quot;</span>, <span class="st">&quot;Recall (Sensitivity)&quot;</span>, <span class="st">&quot;F1-Score&quot;</span>, <span class="st">&quot;ROC-AUC&quot;</span>),</span>
+<span id="cb2-40"><a href="#cb2-40" tabindex="-1"></a>  <span class="at">Value  =</span> <span class="fu">round</span>(<span class="fu">c</span>(acc_m, prec_m, rec_m, f1_m, auc_m), <span class="dv">3</span>)</span>
+<span id="cb2-41"><a href="#cb2-41" tabindex="-1"></a>)</span>
+<span id="cb2-42"><a href="#cb2-42" tabindex="-1"></a></span>
+<span id="cb2-43"><a href="#cb2-43" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(cmp <span class="sc">%&gt;%</span> <span class="fu">arrange</span>(RMSE_usd),</span>
+<span id="cb2-44"><a href="#cb2-44" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Continuous candidates ranked by out-of-sample USD RMSE (Task 6)&quot;</span>)</span></code></pre></div>
 <table style="width:100%;">
 <caption>Continuous candidates ranked by out-of-sample USD RMSE (Task
 6)</caption>
@@ -1847,12 +1890,8 @@ below is traceable:</p>
 </tr>
 </tbody>
 </table>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>logistic_metrics <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">Metric  =</span> <span class="fu">c</span>(<span class="st">&quot;Accuracy&quot;</span>, <span class="st">&quot;Precision&quot;</span>, <span class="st">&quot;Recall (Sensitivity)&quot;</span>, <span class="st">&quot;F1-Score&quot;</span>, <span class="st">&quot;ROC-AUC&quot;</span>),</span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">Value   =</span> <span class="fu">c</span>(<span class="fl">0.761</span>, <span class="fl">0.533</span>, <span class="fl">0.552</span>, <span class="fl">0.542</span>, <span class="fl">0.812</span>)</span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>)</span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(logistic_metrics,</span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Out-of-sample classification metrics of the logistic model (Task 6)&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(logistic_metrics,</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Out-of-sample classification metrics of the logistic model (Task 6)&quot;</span>)</span></code></pre></div>
 <table>
 <caption>Out-of-sample classification metrics of the logistic model
 (Task 6)</caption>
@@ -2423,41 +2462,310 @@ groups. Any claim about company size should therefore be presented as
 conditional, not definitive.</p>
 </div>
 </div>
-<div id="recommendations-for-model-improvement" class="section level2">
-<h2>7.2 Recommendations for model improvement</h2>
-<p>Our analysis suggests four directions for improving predictive
-performance.</p>
-<ol style="list-style-type: decimal">
-<li><p><strong>Collect more data.</strong> At 565 rows and only three
-years, the current data cannot satisfy the variance assumptions:
-residual heteroskedasticity persists on every response scale (BP = 54.7
-on the log and 42.2 on the power response) and normality is rejected
-throughout. More records and more years would stabilize the variance
-structure and yield stable estimates instead of single-snapshot
-extrapolation.</p></li>
-<li><p><strong>Re-balance the data groups.</strong> The sample is
-heavily concentrated in a few categories: the United States dominates,
-which is why its +155% effect towers over every other country, while 36
-of 53 employer countries have three or fewer rows and non-full-time
-employment types rest on 4–10 observations. More even coverage across
-countries, roles, and employment types would let each group’s estimate
-stand on a reasonably sized base rather than a handful of
-records.</p></li>
-<li><p><strong>Add more predictors.</strong> Education, years of
-experience, industry, employer tier, and city-level geography would
-split the dominant country and <code>is_local</code> effects (+155% and
-+51% currently one coarse average) into interpretable, economically
-meaningful pieces, and would give the models distinguishing signal that
-the current seven predictors capture only indirectly.</p></li>
-<li><p><strong>Apply more flexible models.</strong> Two alternatives
-stand out: a Gamma GLM with a log link, which models the variance
-growing with the mean directly (<span class="math inline">\(\mathrm{Var}(\mathrm{salary}_i) =
-\phi\mu_i^2\)</span>; our Box–Cox estimate <span class="math inline">\(\hat\lambda \approx 0.26\)</span> already hints at
-a scale between log and identity), and random forests or gradient
-boosting, which capture non-linearities and interactions that linear and
-ridge models flatten. These models pay off most once the data
-improvements above give them more structure to exploit.</p></li>
-</ol>
+<div id="avenues-for-model-improvement" class="section level2">
+<h2>7.2 Avenues for model improvement</h2>
+<div id="why-a-plateau-not-a-failure" class="section level3">
+<h3>7.2.0 Why a plateau, not a failure</h3>
+<p>The results of Task 6 carry an honest limitation: the seven
+continuous candidates sit within about 0.009 log-RMSE of one another
+(0.580–0.588) and within about $2.9k of USD RMSE. In other words,
+<em>switching model families buys almost nothing</em>. Meanwhile,
+out-of-sample <span class="math inline">\(R^2\)</span> on the log scale
+(about 0.34–0.36) trails the in-sample adjusted <span class="math inline">\(R^2\)</span> of the log model (0.64) by a wide
+margin, and residual diagnostics in Task 4 (§4.2) rejected normality on
+every response scale tested — with heteroskedasticity persisting on both
+the log (BP = 54.7, p = 3·10⁻⁴) and power (BP = 42.2, p = 0.012)
+scales.</p>
+<p>Together these three facts say the remaining error is not a property
+of the linear model family but of <strong>how the problem is
+represented</strong>: the data’s granularity, its measurement quality,
+and how we validate on a single 113-row draw. The improvement avenues
+below therefore emphasize better data, better features, and honest
+validation over “a harder model.”</p>
+</div>
+<div id="data-side-improvements" class="section level3">
+<h3>7.2.1 Data-side improvements</h3>
+<table>
+<colgroup>
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Ave.</th>
+<th>Avenue</th>
+<th>Evidence hook from our analysis</th>
+<th>Expected benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>a</td>
+<td>Add more years (2023+) and more records</td>
+<td>Only 3 years sampled (n = 565); the 2022 surge in Task 3 (§3.4)
+means the newest year is a single snapshot; our test set is one
+draw</td>
+<td>Captures the post-2022 hiring-boom correction instead of
+extrapolating a single year; shrinks metric uncertainty</td>
+</tr>
+<tr class="even">
+<td>b</td>
+<td>Enrich predictors: education, years of experience, industry,
+employer tier, city-level geography</td>
+<td>US is +155% / OR 19.1 — a country-level coarse average that bundles
+many economic forces</td>
+<td>Splits the single largest coefficient into interpretable pieces</td>
+</tr>
+<tr class="odd">
+<td>c</td>
+<td>Fix sparse groups at the source rather than by grouping</td>
+<td>36 of 53 employer countries have ≤ 3 rows (Task 1); part-time (10),
+contract (5), freelance (4); Task 5 had to fold non-FT together</td>
+<td>Fewer information-destroying groupings; keeps granular levels in the
+model</td>
+</tr>
+<tr class="even">
+<td>d</td>
+<td>Improve target quality</td>
+<td><code>salary</code> is self-reported gross pay; the USD conversion
+uses yearly-mean FX rates (fxdata.foorilla.com); no hours worked, so
+PT/FL understate effort-adjusted pay</td>
+<td>Cleaner coupling of “salary” to what a worker actually earns</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="feature-engineering-improvements" class="section level3">
+<h3>7.2.2 Feature-engineering improvements</h3>
+<table>
+<colgroup>
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Ave.</th>
+<th>Avenue</th>
+<th>Evidence hook from our analysis</th>
+<th>Expected benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>e</td>
+<td>Treat <code>remote_ratio</code> as its three categories instead of
+one linear 0–100 slider</td>
+<td>It takes only values {0, 50, 100}; stepwise keeps it as a linear
+term while the quadratic adds nothing (F = 2.48, p = 0.085, Task 4
+§4.3)</td>
+<td>A three-category dummy can still recover a distinct premium at the
+50% hybrid point that a single linear term cannot represent</td>
+</tr>
+<tr class="even">
+<td>f</td>
+<td>Test interaction terms deliberately</td>
+<td>The only ANOVA-tested interaction (Exp × Size) was fragile — p =
+0.008 unadjusted, p = 0.13 robust (Task 3 §3.3); Exp × Role and Year ×
+Experience are untested</td>
+<td>Cannot yet claim “interactions do not matter”; a targeted test would
+settle it</td>
+</tr>
+<tr class="odd">
+<td>g</td>
+<td>Refine <code>is_local</code> into residence-by-remoteness pieces
+(e.g., <code>is_local</code> interacted with
+<code>remote_ratio</code>)</td>
+<td><code>is_local</code> now enters the regression and is worth +51%
+(Task 4 §4.2), but as one blunt 0/1 flag it cannot separate “works
+abroad” from “employer abroad”</td>
+<td>Splits the residence premium into a remote-work component and a
+tax/effort component, replacing one average with two interpretable
+ones</td>
+</tr>
+<tr class="even">
+<td>h</td>
+<td>Revisit the response scale per model — ln for reading, salary^0.26
+for prediction, or a Gamma GLM with log link</td>
+<td>Box–Cox interval [0.22, 0.34] excludes both λ = 1 and λ = 0 (Task 4
+§4.2); heteroskedasticity persists on both the log and the power
+scales</td>
+<td>A principled alternative to “pick a power and hope”; Gamma suits
+multiplicative, positive-skewed pay</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="modeling-and-validation-improvements" class="section level3">
+<h3>7.2.3 Modeling and validation improvements</h3>
+<table>
+<colgroup>
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+<col width="25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Ave.</th>
+<th>Avenue</th>
+<th>Evidence hook from our analysis</th>
+<th>Expected benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>i</td>
+<td>Mixed-effects model with employer country as a random effect</td>
+<td>Task 1 lumped 46 sparse countries into <code>Other</code>; small
+countries plausibly share a latent level</td>
+<td>Borrows strength across countries instead of discarding level
+information</td>
+</tr>
+<tr class="even">
+<td>j</td>
+<td>Quantile regression on log-salary (e.g., 75th percentile)</td>
+<td>The whole classification problem is the top 25%; OLS/ANOVA model
+conditional <em>means</em> and are pulled by heavy tails (Task 3
+§3.3)</td>
+<td>Models exactly the pay range RQs 2 and 3 care about; robust to
+heteroskedastic tails</td>
+</tr>
+<tr class="odd">
+<td>k</td>
+<td>Tree ensembles / gradient boosting with heavy cross-validation</td>
+<td>Residual non-normality persists on every scale (Task 4 §4.2); trees
+capture interactions linear models flatten</td>
+<td>Non-linear capture plus a second source of feature-importance (SHAP)
+to back up §7.1</td>
+</tr>
+<tr class="even">
+<td>l</td>
+<td>Robust estimation, not just robust standard errors (WLS or
+Huber/M-type)</td>
+<td>HC-robust errors fix inference but the coefficients themselves are
+still OLS (Task 4 §4.2)</td>
+<td>Estimates that down-weight the influential, high-variance cells
+ANOVA flagged</td>
+</tr>
+<tr class="odd">
+<td>m</td>
+<td>Ensemble / stack the seven candidates</td>
+<td>All seven sit within ~0.009 log-RMSE — each holds different
+information</td>
+<td>Cheap expected gain by averaging models that agree on the
+plateau</td>
+</tr>
+<tr class="even">
+<td>n</td>
+<td>Uncertainty-aware validation: walk-forward and repeated k-fold,
+bootstrap CIs on metrics</td>
+<td>Our “winner” (Ridge) beats the power transform by ~$0.2k in USD RMSE
+— inseparable from noise on a single 113-row holdout (Task 6 §6.1)</td>
+<td>Replaces point estimates with intervals; tells us which gaps are
+real</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="prioritization-and-the-honest-boundary" class="section level3">
+<h3>7.2.4 Prioritization and the honest boundary</h3>
+<p>We rank the fourteen avenues by expected benefit against effort, and
+by which limitation each fixes:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>priorities <span class="ot">&lt;-</span> <span class="fu">tribble</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="sc">~</span>Priority, <span class="sc">~</span>Avenue,                                  <span class="sc">~</span>Fixes,                      <span class="sc">~</span>Effort,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="st">&quot;Highest payoff&quot;</span>,  <span class="st">&quot;Richer predictors (b) + more recent data (a)&quot;</span>, <span class="st">&quot;The dominant US/+155% driver is currently one coarse block; the test set is one year&quot;</span>, <span class="st">&quot;High (data collection)&quot;</span>,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="st">&quot;Highest payoff&quot;</span>,  <span class="st">&quot;Uncertainty-aware validation (n)&quot;</span>,            <span class="st">&quot;Winner-vs-runner-up gaps near $0.2k are noise on one 113-row draw&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="st">&quot;Cheapest wins&quot;</span>,   <span class="st">&quot;Response-scale work and Gamma GLM (h)&quot;</span>,       <span class="st">&quot;Persistent heteroskedasticity and non-normality on both transformed scales&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="st">&quot;Cheapest wins&quot;</span>,   <span class="st">&quot;Ensemble of the existing seven (m)&quot;</span>,          <span class="st">&quot;The model plateau: every candidate within 0.009 log-RMSE&quot;</span>, <span class="st">&quot;Low&quot;</span>,</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="st">&quot;Moderate value&quot;</span>,  <span class="st">&quot;Quantile regression (j) / mixed effects (i) / tree ensembles (k)&quot;</span>, <span class="st">&quot;Heavy tails, coarse country grouping, flattened interactions&quot;</span>, <span class="st">&quot;Medium&quot;</span>,</span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a>  <span class="st">&quot;Only if adopted for Activity 2&quot;</span>, <span class="st">&quot;Feature engineering (e, f, g) and robust estimation (l)&quot;</span>, <span class="st">&quot;Hybrid remote, untested interactions, OLS coefficient estimates&quot;</span>, <span class="st">&quot;Medium-High&quot;</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a>)</span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(priorities,</span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a>             <span class="at">caption =</span> <span class="st">&quot;Prioritized improvement road-map (a–n refer to the tables above)&quot;</span>)</span></code></pre></div>
+<table>
+<caption>Prioritized improvement road-map (a–n refer to the tables
+above)</caption>
+<colgroup>
+<col width="15%" />
+<col width="31%" />
+<col width="41%" />
+<col width="11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Priority</th>
+<th align="left">Avenue</th>
+<th align="left">Fixes</th>
+<th align="left">Effort</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Highest payoff</td>
+<td align="left">Richer predictors (b) + more recent data (a)</td>
+<td align="left">The dominant US/+155% driver is currently one coarse
+block; the test set is one year</td>
+<td align="left">High (data collection)</td>
+</tr>
+<tr class="even">
+<td align="left">Highest payoff</td>
+<td align="left">Uncertainty-aware validation (n)</td>
+<td align="left">Winner-vs-runner-up gaps near $0.2k are noise on one
+113-row draw</td>
+<td align="left">Low</td>
+</tr>
+<tr class="odd">
+<td align="left">Cheapest wins</td>
+<td align="left">Response-scale work and Gamma GLM (h)</td>
+<td align="left">Persistent heteroskedasticity and non-normality on both
+transformed scales</td>
+<td align="left">Low</td>
+</tr>
+<tr class="even">
+<td align="left">Cheapest wins</td>
+<td align="left">Ensemble of the existing seven (m)</td>
+<td align="left">The model plateau: every candidate within 0.009
+log-RMSE</td>
+<td align="left">Low</td>
+</tr>
+<tr class="odd">
+<td align="left">Moderate value</td>
+<td align="left">Quantile regression (j) / mixed effects (i) / tree
+ensembles (k)</td>
+<td align="left">Heavy tails, coarse country grouping, flattened
+interactions</td>
+<td align="left">Medium</td>
+</tr>
+<tr class="even">
+<td align="left">Only if adopted for Activity 2</td>
+<td align="left">Feature engineering (e, f, g) and robust estimation
+(l)</td>
+<td align="left">Hybrid remote, untested interactions, OLS coefficient
+estimates</td>
+<td align="left">Medium-High</td>
+</tr>
+</tbody>
+</table>
+<p>We deliberately recommend <em>not</em> rushing to a more exotic model
+family first: the seven existing candidates already disagree by only
+pennies on the dollar, so the next model will inherit the same ceiling.
+The two moves with the largest expected impact are entirely data-side —
+collecting more recent, richer records so the giant country effect can
+be decomposed — and validation-side, so that the tiny gaps we currently
+report as rankings are expressed as the uncertainty intervals they
+actually are.</p>
+<p>Closing honestly: with a self-reported, single-source Kaggle sample
+of 565 rows, we have strong cross-method evidence that <strong>the
+drivers are robust</strong> (experience, geography, role family), but
+the error <em>around</em> those drivers is idiosyncratic — no modeling
+treatment we tried removes it. That asymmetry is exactly what the
+report’s conclusions will carry into Activity 2, where we aim to test
+whether a richer data source lets the same methods do better.</p>
+</div>
 </div>
 </div>
 
